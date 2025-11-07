@@ -1,0 +1,30 @@
+{
+  "profiles": {
+    "claude": {
+      "api_key": "sk-ant-api03-YOUR-KEY-HERE",
+      "base_url": "https://api.anthropic.com",
+      "models": {
+        "haiku": "claude-3-5-haiku-20241022",
+        "sonnet": "claude-sonnet-4-5-20250929",
+        "opus": "claude-opus-4-20250514"
+      }
+    },
+    "glm": {
+      "api_key": "YOUR-ZAI-API-KEY-HERE",
+      "base_url": "https://api.z.ai/api/anthropic",
+      "models": {
+        "haiku": "GLM-4.5-Air",
+        "sonnet": "GLM-4.6",
+        "opus": "GLM-4.6"
+      }
+    },
+    "deepseek": {
+      "api_key": "YOUR-DEEPSEEK-KEY",
+      "base_url": "https://api.deepseek.com",
+      "models": {
+        "sonnet": "deepseek-coder"
+      }
+    }
+  },
+  "default_profile": "claude"
+}

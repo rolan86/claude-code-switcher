@@ -1,0 +1,301 @@
+#!/usr/bin/env python3
+"""
+Claude Code Switcher - Manage multiple model profiles and launch isolated sessions
+"""
+
+import json
+import os
+import sys
+import subprocess
+from pathlib import Path
+from typing import Dict, Any, Optional
+
+CONFIG_DIR = Path.home() / ".claude-switcher"
+PROFILES_FILE = CONFIG_DIR / "profiles.json"
+
+class ProfileManager:
+    def __init__(self):
+        self.config_dir = CONFIG_DIR
+        self.profiles_file = PROFILES_FILE
+        self._ensure_config_exists()
+
+    def _ensure_config_exists(self):
+        """Create config directory and default profiles file if they don't exist"""
+        self.config_dir.mkdir(exist_ok=True)
+
+        if not self.profiles_file.exists():
+            default_config = {
+                "profiles": {},
+                "default_profile": None
+            }
+            self._save_config(default_config)
+
+    def _load_config(self) -> Dict[str, Any]:
+        """Load profiles configuration"""
+        with open(self.profiles_file, 'r') as f:
+            return json.load(f)
+
+    def _save_config(self, config: Dict[str, Any]):
+        """Save profiles configuration"""
+        with open(self.profiles_file, 'w') as f:
+            json.dump(config, f, indent=2)
+
+    def add_profile(self, name: str, interactive: bool = True):
+        """Add a new profile"""
+        config = self._load_config()
+
+        if name in config['profiles']:
+            response = input(f"Profile '{name}' already exists. Overwrite? (y/n): ")
+            if response.lower() != 'y':
+                print("Aborted.")
+                return
+
+        profile = {}
+
+        if interactive:
+            print(f"\n=== Creating profile: {name} ===")
+
+            # API Key
+            api_key = input("API Key (or Auth Token): ").strip()
+            profile['api_key'] = api_key
+
+            # Base URL
+            print("\nBase URL (press Enter for default Anthropic):")
+            print("  - Anthropic (default): https://api.anthropic.com")
+            print("  - Z.AI GLM: https://api.z.ai/api/anthropic")
+            print("  - Custom: Enter your URL")
+            base_url = input("Base URL: ").strip()
+            profile['base_url'] = base_url if base_url else "https://api.anthropic.com"
+
+            # Model mappings
+            print("\nModel mappings (press Enter to skip):")
+            profile['models'] = {}
+
+            for tier in ['haiku', 'sonnet', 'opus']:
+                model = input(f"  {tier.capitalize()} model: ").strip()
+                if model:
+                    profile['models'][tier] = model
+
+        config['profiles'][name] = profile
+
+        # Set as default if it's the first profile
+        if not config['default_profile']:
+            config['default_profile'] = name
+            print(f"\nSet '{name}' as default profile")
+
+        self._save_config(config)
+        print(f"\n✓ Profile '{name}' saved successfully!")
+
+    def list_profiles(self):
+        """List all profiles"""
+        config = self._load_config()
+
+        if not config['profiles']:
+            print("No profiles configured. Use 'claude-switcher profile add <name>' to create one.")
+            return
+
+        print("\n=== Configured Profiles ===\n")
+        for name, profile in config['profiles'].items():
+            is_default = " (default)" if name == config['default_profile'] else ""
+            print(f"• {name}{is_default}")
+            print(f"  Base URL: {profile.get('base_url', 'N/A')}")
+            if profile.get('models'):
+                print(f"  Models: {', '.join(f'{k}={v}' for k, v in profile['models'].items())}")
+            print()
+
+    def remove_profile(self, name: str):
+        """Remove a profile"""
+        config = self._load_config()
+
+        if name not in config['profiles']:
+            print(f"Error: Profile '{name}' not found")
+            sys.exit(1)
+
+        del config['profiles'][name]
+
+        # Update default if needed
+        if config['default_profile'] == name:
+            config['default_profile'] = list(config['profiles'].keys())[0] if config['profiles'] else None
+
+        self._save_config(config)
+        print(f"✓ Profile '{name}' removed")
+
+    def get_profile(self, name: Optional[str] = None) -> Dict[str, Any]:
+        """Get a profile by name or default"""
+        config = self._load_config()
+
+        if name is None:
+            name = config['default_profile']
+            if name is None:
+                print("Error: No default profile set and no profile specified")
+                sys.exit(1)
+
+        if name not in config['profiles']:
+            print(f"Error: Profile '{name}' not found")
+            print(f"Available profiles: {', '.join(config['profiles'].keys())}")
+            sys.exit(1)
+
+        return config['profiles'][name]
+
+    def set_default(self, name: str):
+        """Set default profile"""
+        config = self._load_config()
+
+        if name not in config['profiles']:
+            print(f"Error: Profile '{name}' not found")
+            sys.exit(1)
+
+        config['default_profile'] = name
+        self._save_config(config)
+        print(f"✓ Default profile set to '{name}'")
+
+
+def launch_session(profile_name: Optional[str] = None, extra_args: list = None):
+    """Launch Claude Code with the specified profile"""
+    manager = ProfileManager()
+    profile = manager.get_profile(profile_name)
+
+    # Build environment
+    env = os.environ.copy()
+
+    # Set API credentials
+    if 'api_key' in profile:
+        env['ANTHROPIC_API_KEY'] = profile['api_key']
+        env['ANTHROPIC_AUTH_TOKEN'] = profile['api_key']  # Some versions use this
+
+    # Set base URL
+    if 'base_url' in profile and profile['base_url']:
+        env['ANTHROPIC_BASE_URL'] = profile['base_url']
+
+    # Set model mappings
+    if 'models' in profile:
+        models = profile['models']
+        if 'haiku' in models:
+            env['ANTHROPIC_DEFAULT_HAIKU_MODEL'] = models['haiku']
+        if 'sonnet' in models:
+            env['ANTHROPIC_DEFAULT_SONNET_MODEL'] = models['sonnet']
+        if 'opus' in models:
+            env['ANTHROPIC_DEFAULT_OPUS_MODEL'] = models['opus']
+
+    # Build command
+    cmd = ['claude']
+    if extra_args:
+        cmd.extend(extra_args)
+
+    profile_display = profile_name or manager._load_config()['default_profile']
+    print(f"🚀 Launching Claude Code with profile: {profile_display}")
+    print(f"   Base URL: {profile.get('base_url', 'default')}")
+    print()
+
+    # Launch Claude Code
+    try:
+        subprocess.run(cmd, env=env)
+    except KeyboardInterrupt:
+        print("\n\nSession terminated.")
+    except FileNotFoundError:
+        print("Error: 'claude' command not found. Is Claude Code installed?")
+        sys.exit(1)
+
+
+def print_usage():
+    """Print usage information"""
+    print("""
+Claude Code Switcher - Manage multiple model profiles and launch isolated sessions
+
+USAGE:
+    claude-switcher start [profile] [--args]    Launch Claude Code with a profile
+    claude-switcher profile add <name>          Add a new profile
+    claude-switcher profile list                List all profiles
+    claude-switcher profile remove <name>       Remove a profile
+    claude-switcher profile default <name>      Set default profile
+    claude-switcher help                        Show this help
+
+EXAMPLES:
+    # Add profiles
+    claude-switcher profile add claude
+    claude-switcher profile add glm
+
+    # Launch sessions (each isolated from others)
+    claude-switcher start claude
+    claude-switcher start glm
+    claude-switcher start              # Use default profile
+
+    # List configured profiles
+    claude-switcher profile list
+
+    # Set default profile
+    claude-switcher profile default glm
+
+PROFILES:
+    Profiles are stored in ~/.claude-switcher/profiles.json
+    Each profile contains:
+    - API key/token
+    - Base URL (API endpoint)
+    - Model mappings (haiku, sonnet, opus)
+
+WHY USE THIS:
+    - Run multiple Claude Code sessions with different models simultaneously
+    - Switch between Claude and GLM without breaking existing sessions
+    - Keep credentials organized and secure
+    - No manual config file editing
+""")
+
+
+def main():
+    if len(sys.argv) < 2:
+        print_usage()
+        sys.exit(0)
+
+    command = sys.argv[1]
+
+    if command == 'help' or command == '--help' or command == '-h':
+        print_usage()
+
+    elif command == 'start':
+        profile = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith('-') else None
+        extra_args = sys.argv[3:] if profile else sys.argv[2:]
+        launch_session(profile, extra_args)
+
+    elif command == 'profile':
+        if len(sys.argv) < 3:
+            print("Error: Missing profile subcommand")
+            print("Use: claude-switcher profile [add|list|remove|default]")
+            sys.exit(1)
+
+        subcommand = sys.argv[2]
+        manager = ProfileManager()
+
+        if subcommand == 'add':
+            if len(sys.argv) < 4:
+                print("Error: Missing profile name")
+                print("Use: claude-switcher profile add <name>")
+                sys.exit(1)
+            manager.add_profile(sys.argv[3])
+
+        elif subcommand == 'list':
+            manager.list_profiles()
+
+        elif subcommand == 'remove':
+            if len(sys.argv) < 4:
+                print("Error: Missing profile name")
+                sys.exit(1)
+            manager.remove_profile(sys.argv[3])
+
+        elif subcommand == 'default':
+            if len(sys.argv) < 4:
+                print("Error: Missing profile name")
+                sys.exit(1)
+            manager.set_default(sys.argv[3])
+
+        else:
+            print(f"Error: Unknown profile subcommand: {subcommand}")
+            sys.exit(1)
+
+    else:
+        print(f"Error: Unknown command: {command}")
+        print("Use 'claude-switcher help' for usage information")
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
