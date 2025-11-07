@@ -1,6 +1,8 @@
-# Claude Code Switcher
+# Claude Code Switcher v2.0
 
-A lightweight CLI tool to manage multiple model profiles and launch isolated Claude Code sessions. Perfect for switching between Claude and GLM models without breaking active sessions.
+A powerful CLI tool to manage multiple model profiles and launch isolated Claude Code sessions. Perfect for switching between Claude and GLM models without breaking active sessions.
+
+**New in v2.0:** Profile management, aliases, workspace profiles, session tracking, logging, backups, and much more!
 
 ## The Problem
 
@@ -16,11 +18,24 @@ When using Claude Code with multiple simultaneous sessions, changing the global 
 
 ## Features
 
-✨ **Profile Management** - Store multiple API configurations
+### Core Features
+✨ **Profile Management** - Store and manage multiple API configurations
 🚀 **Session Isolation** - Run Claude and GLM sessions simultaneously
 🔧 **Easy Switching** - One command to launch with any profile
 🔐 **Secure** - Credentials stored locally in `~/.claude-switcher/`
 🌍 **Cross-Platform** - Works on macOS and Linux
+
+### New in v2.0
+🎯 **Profile Aliases** - Create short aliases for frequently used profiles
+📁 **Workspace Profiles** - Auto-select profiles based on current directory
+👁️ **Environment Viewer** - See exactly what env vars will be set
+✅ **Profile Validation** - Verify your profiles before launching
+📤 **Import/Export** - Share profiles with your team
+🔄 **Clone Profiles** - Duplicate profiles for testing
+💾 **Backup/Restore** - Never lose your configuration
+📊 **Session Tracking** - Monitor and manage active sessions
+📝 **Activity Logging** - Track usage and debug issues
+📈 **Usage Statistics** - See which profiles you use most
 
 ## Installation
 
@@ -135,15 +150,46 @@ claude-switcher profile remove old-profile
 
 ## Usage
 
-### Commands
+### Quick Reference
 
 ```bash
-claude-switcher start [profile] [--args]    # Launch session with profile
-claude-switcher profile add <name>          # Add new profile
-claude-switcher profile list                # List all profiles
-claude-switcher profile remove <name>       # Remove profile
-claude-switcher profile default <name>      # Set default profile
-claude-switcher help                        # Show help
+# Basic commands
+claude-switcher start [profile]          # Launch session
+claude-switcher profile list             # List profiles
+claude-switcher help                     # Show help
+claude-switcher version                  # Show version
+
+# Profile management
+claude-switcher profile add <name>       # Add profile
+claude-switcher profile remove <name>    # Remove profile
+claude-switcher profile clone <src> <dst># Clone profile
+claude-switcher profile validate <name>  # Validate profile
+claude-switcher profile env <name>       # Show env vars
+claude-switcher profile export <name>    # Export to JSON
+claude-switcher profile import <file>    # Import from JSON
+
+# Aliases
+claude-switcher alias add <alias> <prof> # Create alias
+claude-switcher alias list               # List aliases
+claude-switcher alias remove <alias>     # Remove alias
+
+# Workspace
+claude-switcher workspace init <profile> # Set workspace default
+claude-switcher workspace remove         # Remove workspace config
+
+# Sessions
+claude-switcher session list             # List active sessions
+claude-switcher session kill <pid>       # Kill a session
+
+# Backup & Restore
+claude-switcher backup create            # Backup configuration
+claude-switcher backup list              # List backups
+claude-switcher backup restore <file>    # Restore from backup
+
+# Logs & Stats
+claude-switcher logs show [limit]        # Show activity log
+claude-switcher logs stats               # Usage statistics
+claude-switcher logs clear               # Clear logs
 ```
 
 ### Profile Configuration
@@ -203,6 +249,112 @@ claude-switcher start glm
 claude-switcher start my-custom-model
 ```
 
+### Using Aliases for Quick Access
+
+```bash
+# Create short aliases
+claude-switcher alias add c claude
+claude-switcher alias add g glm
+
+# Now use them
+claude-switcher start c    # Launches Claude profile
+claude-switcher start g    # Launches GLM profile
+
+# List all aliases
+claude-switcher alias list
+```
+
+### Workspace-Specific Profiles
+
+```bash
+# Set up a project to always use GLM
+cd ~/my-glm-project
+claude-switcher workspace init glm
+
+# Now starting without specifying a profile uses GLM
+claude-switcher start
+
+# Different project, different model
+cd ~/my-claude-project
+claude-switcher workspace init claude
+claude-switcher start    # Uses Claude automatically
+```
+
+### Profile Management
+
+```bash
+# Clone a profile for testing
+claude-switcher profile clone claude claude-experimental
+
+# Validate before using
+claude-switcher profile validate claude-experimental
+
+# See what environment variables will be set
+claude-switcher profile env claude-experimental
+
+# Export profile to share with team
+claude-switcher profile export claude team-claude-profile.json
+
+# Import a profile from teammate
+claude-switcher profile import team-profile.json shared-claude
+```
+
+### Session Management
+
+```bash
+# Launch a session
+claude-switcher start glm
+
+# In another terminal, view active sessions
+claude-switcher session list
+# Output:
+# === Active Sessions ===
+#
+# • PID: 12345
+#   Profile: glm
+#   Started: 2025-11-07T10:30:00
+#   Directory: /home/user/projects/my-app
+
+# Kill a session if needed
+claude-switcher session kill 12345
+```
+
+### Backup and Restore
+
+```bash
+# Create a backup before making changes
+claude-switcher backup create
+# Output: ✓ Configuration backed up to ~/.claude-switcher/backups/backup_20251107_143000.json
+
+# List all backups
+claude-switcher backup list
+
+# Restore from a backup
+claude-switcher backup restore ~/.claude-switcher/backups/backup_20251107_143000.json
+```
+
+### Logging and Statistics
+
+```bash
+# View recent activity
+claude-switcher logs show 20
+
+# See usage statistics
+claude-switcher logs stats
+# Output:
+# === Usage Statistics ===
+#
+# Total sessions: 47
+#
+# Sessions by profile:
+#   glm: 28 (59.6%)
+#   claude: 15 (31.9%)
+#   custom: 4 (8.5%)
+
+# Clear old logs
+claude-switcher logs clear
+```
+
 ### Creating a Custom Profile
 
 ```bash
@@ -260,6 +412,64 @@ MIT License - see [LICENSE](LICENSE)
 ## Credits
 
 Created to solve the pain of switching between Claude and GLM models in Claude Code.
+
+## Data Storage
+
+Claude Code Switcher stores all its data in `~/.claude-switcher/`:
+
+```
+~/.claude-switcher/
+├── profiles.json      # Your profile configurations
+├── aliases.json       # Profile aliases
+├── sessions.json      # Active session tracking
+├── logs/              # Activity logs
+│   └── activity_YYYYMM.log
+└── backups/           # Configuration backups
+    └── backup_YYYYMMDD_HHMMSS.json
+```
+
+Additionally, workspace-specific configurations are stored in `.claude-switcher.json` in each project directory.
+
+### Uninstalling
+
+To completely remove Claude Code Switcher:
+
+```bash
+# Run the uninstall script
+./uninstall.sh
+
+# Or manually:
+sudo rm /usr/local/bin/claude-switcher
+rm -rf ~/.claude-switcher/
+```
+
+## Changelog
+
+### v2.0.0 (2025-11-07)
+
+**Major Features:**
+- Profile aliases for quick access
+- Workspace-specific profiles
+- Profile import/export for team sharing
+- Profile cloning and validation
+- Environment variable viewer
+- Session tracking and management
+- Activity logging
+- Usage statistics
+- Backup and restore functionality
+- Enhanced help documentation
+
+**Technical Improvements:**
+- Complete code restructuring with manager classes
+- Better error handling
+- Comprehensive validation
+
+### v1.0.0
+
+- Initial release
+- Basic profile management
+- Session isolation
+- Multi-model support
 
 ## Resources
 

@@ -7,11 +7,23 @@ import json
 import os
 import sys
 import subprocess
+import shutil
+import time
+import signal
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+from datetime import datetime
+from urllib.parse import urlparse
+
+VERSION = "2.0.0"
 
 CONFIG_DIR = Path.home() / ".claude-switcher"
 PROFILES_FILE = CONFIG_DIR / "profiles.json"
+ALIASES_FILE = CONFIG_DIR / "aliases.json"
+SESSIONS_FILE = CONFIG_DIR / "sessions.json"
+LOGS_DIR = CONFIG_DIR / "logs"
+BACKUPS_DIR = CONFIG_DIR / "backups"
+WORKSPACE_FILE = ".claude-switcher.json"
 
 class ProfileManager:
     def __init__(self):
@@ -22,6 +34,8 @@ class ProfileManager:
     def _ensure_config_exists(self):
         """Create config directory and default profiles file if they don't exist"""
         self.config_dir.mkdir(exist_ok=True)
+        LOGS_DIR.mkdir(exist_ok=True)
+        BACKUPS_DIR.mkdir(exist_ok=True)
 
         if not self.profiles_file.exists():
             default_config = {
@@ -149,10 +163,515 @@ class ProfileManager:
         self._save_config(config)
         print(f"✓ Default profile set to '{name}'")
 
+    def clone_profile(self, source: str, destination: str):
+        """Clone an existing profile"""
+        config = self._load_config()
+
+        if source not in config['profiles']:
+            print(f"Error: Profile '{source}' not found")
+            sys.exit(1)
+
+        if destination in config['profiles']:
+            response = input(f"Profile '{destination}' already exists. Overwrite? (y/n): ")
+            if response.lower() != 'y':
+                print("Aborted.")
+                return
+
+        config['profiles'][destination] = config['profiles'][source].copy()
+        if 'models' in config['profiles'][destination]:
+            config['profiles'][destination]['models'] = config['profiles'][source]['models'].copy()
+
+        self._save_config(config)
+        print(f"✓ Profile '{source}' cloned to '{destination}'")
+
+    def export_profile(self, name: str, output_file: Optional[str] = None):
+        """Export a profile to JSON"""
+        config = self._load_config()
+
+        if name not in config['profiles']:
+            print(f"Error: Profile '{name}' not found")
+            sys.exit(1)
+
+        profile_data = {
+            "name": name,
+            "profile": config['profiles'][name],
+            "exported_at": datetime.now().isoformat(),
+            "version": VERSION
+        }
+
+        if output_file:
+            with open(output_file, 'w') as f:
+                json.dump(profile_data, f, indent=2)
+            print(f"✓ Profile '{name}' exported to {output_file}")
+        else:
+            print(json.dumps(profile_data, indent=2))
+
+    def import_profile(self, input_file: str, new_name: Optional[str] = None):
+        """Import a profile from JSON"""
+        try:
+            with open(input_file, 'r') as f:
+                profile_data = json.load(f)
+        except FileNotFoundError:
+            print(f"Error: File '{input_file}' not found")
+            sys.exit(1)
+        except json.JSONDecodeError:
+            print(f"Error: Invalid JSON in '{input_file}'")
+            sys.exit(1)
+
+        name = new_name if new_name else profile_data.get('name', 'imported')
+        config = self._load_config()
+
+        if name in config['profiles']:
+            response = input(f"Profile '{name}' already exists. Overwrite? (y/n): ")
+            if response.lower() != 'y':
+                print("Aborted.")
+                return
+
+        config['profiles'][name] = profile_data['profile']
+        self._save_config(config)
+        print(f"✓ Profile imported as '{name}'")
+
+    def validate_profile(self, name: str):
+        """Validate a profile's configuration"""
+        config = self._load_config()
+
+        if name not in config['profiles']:
+            print(f"Error: Profile '{name}' not found")
+            sys.exit(1)
+
+        profile = config['profiles'][name]
+        print(f"\n=== Validating profile: {name} ===\n")
+
+        # Check API key
+        if 'api_key' in profile and profile['api_key']:
+            key_len = len(profile['api_key'])
+            masked_key = profile['api_key'][:8] + '...' + profile['api_key'][-4:] if key_len > 12 else '***'
+            print(f"✓ API Key: {masked_key} ({key_len} characters)")
+        else:
+            print("⚠ API Key: Not set")
+
+        # Check base URL
+        if 'base_url' in profile and profile['base_url']:
+            url = profile['base_url']
+            try:
+                parsed = urlparse(url)
+                if parsed.scheme in ['http', 'https'] and parsed.netloc:
+                    print(f"✓ Base URL: {url}")
+                else:
+                    print(f"⚠ Base URL: {url} (may be invalid)")
+            except Exception:
+                print(f"⚠ Base URL: {url} (invalid format)")
+        else:
+            print("✓ Base URL: Using default (https://api.anthropic.com)")
+
+        # Check models
+        if 'models' in profile and profile['models']:
+            print(f"✓ Models configured:")
+            for tier, model in profile['models'].items():
+                print(f"  - {tier}: {model}")
+        else:
+            print("⚠ Models: Using defaults")
+
+        print("\n✓ Profile validation complete")
+
+    def show_env(self, name: str):
+        """Show environment variables that would be set for a profile"""
+        config = self._load_config()
+
+        if name not in config['profiles']:
+            print(f"Error: Profile '{name}' not found")
+            sys.exit(1)
+
+        profile = config['profiles'][name]
+        print(f"\n=== Environment variables for profile: {name} ===\n")
+
+        if 'api_key' in profile:
+            key = profile['api_key']
+            masked = key[:8] + '...' + key[-4:] if len(key) > 12 else '***'
+            print(f"ANTHROPIC_API_KEY={masked}")
+            print(f"ANTHROPIC_AUTH_TOKEN={masked}")
+
+        if 'base_url' in profile and profile['base_url']:
+            print(f"ANTHROPIC_BASE_URL={profile['base_url']}")
+
+        if 'models' in profile:
+            models = profile['models']
+            if 'haiku' in models:
+                print(f"ANTHROPIC_DEFAULT_HAIKU_MODEL={models['haiku']}")
+            if 'sonnet' in models:
+                print(f"ANTHROPIC_DEFAULT_SONNET_MODEL={models['sonnet']}")
+            if 'opus' in models:
+                print(f"ANTHROPIC_DEFAULT_OPUS_MODEL={models['opus']}")
+
+        print()
+
+    def backup_config(self):
+        """Backup all profiles and settings"""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = BACKUPS_DIR / f"backup_{timestamp}.json"
+
+        config = self._load_config()
+        backup_data = {
+            "backup_date": datetime.now().isoformat(),
+            "version": VERSION,
+            "config": config
+        }
+
+        with open(backup_file, 'w') as f:
+            json.dump(backup_data, f, indent=2)
+
+        print(f"✓ Configuration backed up to {backup_file}")
+        return backup_file
+
+    def restore_config(self, backup_file: str):
+        """Restore profiles from a backup"""
+        try:
+            with open(backup_file, 'r') as f:
+                backup_data = json.load(f)
+        except FileNotFoundError:
+            print(f"Error: Backup file '{backup_file}' not found")
+            sys.exit(1)
+        except json.JSONDecodeError:
+            print(f"Error: Invalid backup file format")
+            sys.exit(1)
+
+        print(f"\n=== Restoring from backup ===")
+        print(f"Backup date: {backup_data.get('backup_date', 'Unknown')}")
+        print(f"Profiles in backup: {len(backup_data['config']['profiles'])}")
+
+        response = input("\nThis will overwrite current configuration. Continue? (y/n): ")
+        if response.lower() != 'y':
+            print("Aborted.")
+            return
+
+        self._save_config(backup_data['config'])
+        print("✓ Configuration restored successfully")
+
+    def list_backups(self):
+        """List all available backups"""
+        backups = sorted(BACKUPS_DIR.glob("backup_*.json"), reverse=True)
+
+        if not backups:
+            print("No backups found")
+            return
+
+        print("\n=== Available Backups ===\n")
+        for backup in backups:
+            try:
+                with open(backup, 'r') as f:
+                    data = json.load(f)
+                backup_date = data.get('backup_date', 'Unknown')
+                num_profiles = len(data.get('config', {}).get('profiles', {}))
+                print(f"• {backup.name}")
+                print(f"  Date: {backup_date}")
+                print(f"  Profiles: {num_profiles}")
+                print(f"  Path: {backup}")
+                print()
+            except Exception as e:
+                print(f"• {backup.name} (corrupted: {e})")
+                print()
+
+
+class AliasManager:
+    """Manage profile aliases"""
+
+    def __init__(self):
+        self.aliases_file = ALIASES_FILE
+        self._ensure_aliases_exists()
+
+    def _ensure_aliases_exists(self):
+        if not self.aliases_file.exists():
+            with open(self.aliases_file, 'w') as f:
+                json.dump({"aliases": {}}, f)
+
+    def _load_aliases(self) -> Dict[str, str]:
+        with open(self.aliases_file, 'r') as f:
+            return json.load(f)
+
+    def _save_aliases(self, data: Dict[str, Any]):
+        with open(self.aliases_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+    def add_alias(self, alias: str, profile: str):
+        """Add an alias for a profile"""
+        # Verify profile exists
+        pm = ProfileManager()
+        pm.get_profile(profile)  # This will exit if profile doesn't exist
+
+        data = self._load_aliases()
+        data['aliases'][alias] = profile
+        self._save_aliases(data)
+        print(f"✓ Alias '{alias}' -> '{profile}' created")
+
+    def remove_alias(self, alias: str):
+        """Remove an alias"""
+        data = self._load_aliases()
+        if alias in data['aliases']:
+            del data['aliases'][alias]
+            self._save_aliases(data)
+            print(f"✓ Alias '{alias}' removed")
+        else:
+            print(f"Error: Alias '{alias}' not found")
+            sys.exit(1)
+
+    def list_aliases(self):
+        """List all aliases"""
+        data = self._load_aliases()
+        if not data['aliases']:
+            print("No aliases configured")
+            return
+
+        print("\n=== Aliases ===\n")
+        for alias, profile in data['aliases'].items():
+            print(f"  {alias} -> {profile}")
+        print()
+
+    def resolve_alias(self, name: str) -> str:
+        """Resolve an alias to a profile name"""
+        data = self._load_aliases()
+        return data['aliases'].get(name, name)
+
+
+class SessionManager:
+    """Manage active Claude Code sessions"""
+
+    def __init__(self):
+        self.sessions_file = SESSIONS_FILE
+        self._ensure_sessions_exists()
+
+    def _ensure_sessions_exists(self):
+        if not self.sessions_file.exists():
+            with open(self.sessions_file, 'w') as f:
+                json.dump({"sessions": []}, f)
+
+    def _load_sessions(self) -> Dict[str, Any]:
+        with open(self.sessions_file, 'r') as f:
+            return json.load(f)
+
+    def _save_sessions(self, data: Dict[str, Any]):
+        with open(self.sessions_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+    def add_session(self, pid: int, profile: str):
+        """Track a new session"""
+        data = self._load_sessions()
+        session = {
+            "pid": pid,
+            "profile": profile,
+            "started_at": datetime.now().isoformat(),
+            "cwd": os.getcwd()
+        }
+        data['sessions'].append(session)
+        self._save_sessions(data)
+
+    def remove_session(self, pid: int):
+        """Remove a session"""
+        data = self._load_sessions()
+        data['sessions'] = [s for s in data['sessions'] if s['pid'] != pid]
+        self._save_sessions(data)
+
+    def list_sessions(self):
+        """List all tracked sessions"""
+        data = self._load_sessions()
+        active_sessions = []
+
+        # Clean up dead sessions
+        for session in data['sessions']:
+            try:
+                os.kill(session['pid'], 0)  # Check if process exists
+                active_sessions.append(session)
+            except OSError:
+                pass  # Process is dead
+
+        # Update sessions file
+        data['sessions'] = active_sessions
+        self._save_sessions(data)
+
+        if not active_sessions:
+            print("No active sessions")
+            return
+
+        print("\n=== Active Sessions ===\n")
+        for session in active_sessions:
+            print(f"• PID: {session['pid']}")
+            print(f"  Profile: {session['profile']}")
+            print(f"  Started: {session['started_at']}")
+            print(f"  Directory: {session.get('cwd', 'N/A')}")
+            print()
+
+    def kill_session(self, pid: int):
+        """Kill a session by PID"""
+        try:
+            os.kill(pid, signal.SIGTERM)
+            self.remove_session(pid)
+            print(f"✓ Session {pid} terminated")
+        except OSError as e:
+            print(f"Error: Could not kill session {pid}: {e}")
+            sys.exit(1)
+
+
+class WorkspaceManager:
+    """Manage workspace-specific profiles"""
+
+    @staticmethod
+    def init_workspace(profile: str):
+        """Initialize workspace with a default profile"""
+        workspace_file = Path(WORKSPACE_FILE)
+        if workspace_file.exists():
+            response = input(f"Workspace config already exists. Overwrite? (y/n): ")
+            if response.lower() != 'y':
+                print("Aborted.")
+                return
+
+        # Verify profile exists
+        pm = ProfileManager()
+        pm.get_profile(profile)
+
+        workspace_config = {
+            "profile": profile,
+            "created_at": datetime.now().isoformat()
+        }
+
+        with open(workspace_file, 'w') as f:
+            json.dump(workspace_config, f, indent=2)
+
+        print(f"✓ Workspace initialized with profile '{profile}'")
+        print(f"  Config saved to: {workspace_file.absolute()}")
+
+    @staticmethod
+    def get_workspace_profile() -> Optional[str]:
+        """Get the profile for the current workspace"""
+        workspace_file = Path(WORKSPACE_FILE)
+        if workspace_file.exists():
+            try:
+                with open(workspace_file, 'r') as f:
+                    config = json.load(f)
+                    return config.get('profile')
+            except Exception:
+                pass
+        return None
+
+    @staticmethod
+    def remove_workspace():
+        """Remove workspace configuration"""
+        workspace_file = Path(WORKSPACE_FILE)
+        if workspace_file.exists():
+            workspace_file.unlink()
+            print("✓ Workspace configuration removed")
+        else:
+            print("No workspace configuration found")
+
+
+class Logger:
+    """Log session activity"""
+
+    @staticmethod
+    def log(event_type: str, profile: str, details: Optional[Dict[str, Any]] = None):
+        """Log an event"""
+        log_file = LOGS_DIR / f"activity_{datetime.now().strftime('%Y%m')}.log"
+
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "event": event_type,
+            "profile": profile,
+            "details": details or {}
+        }
+
+        with open(log_file, 'a') as f:
+            f.write(json.dumps(log_entry) + '\n')
+
+    @staticmethod
+    def show_logs(limit: int = 50):
+        """Show recent log entries"""
+        all_logs = []
+
+        for log_file in sorted(LOGS_DIR.glob("activity_*.log")):
+            with open(log_file, 'r') as f:
+                for line in f:
+                    try:
+                        all_logs.append(json.loads(line.strip()))
+                    except json.JSONDecodeError:
+                        pass
+
+        if not all_logs:
+            print("No logs found")
+            return
+
+        recent_logs = all_logs[-limit:]
+        print(f"\n=== Recent Activity (last {len(recent_logs)} entries) ===\n")
+
+        for log in recent_logs:
+            timestamp = log['timestamp'].split('T')[0] + ' ' + log['timestamp'].split('T')[1][:8]
+            print(f"[{timestamp}] {log['event']}: {log['profile']}")
+            if log.get('details'):
+                for key, value in log['details'].items():
+                    print(f"  {key}: {value}")
+        print()
+
+    @staticmethod
+    def clear_logs():
+        """Clear all logs"""
+        response = input("This will delete all log files. Continue? (y/n): ")
+        if response.lower() != 'y':
+            print("Aborted.")
+            return
+
+        for log_file in LOGS_DIR.glob("activity_*.log"):
+            log_file.unlink()
+
+        print("✓ All logs cleared")
+
+    @staticmethod
+    def stats():
+        """Show usage statistics"""
+        profile_count = {}
+        total_sessions = 0
+
+        for log_file in LOGS_DIR.glob("activity_*.log"):
+            with open(log_file, 'r') as f:
+                for line in f:
+                    try:
+                        log = json.loads(line.strip())
+                        if log['event'] == 'session_start':
+                            total_sessions += 1
+                            profile = log['profile']
+                            profile_count[profile] = profile_count.get(profile, 0) + 1
+                    except json.JSONDecodeError:
+                        pass
+
+        if total_sessions == 0:
+            print("No session statistics available")
+            return
+
+        print(f"\n=== Usage Statistics ===\n")
+        print(f"Total sessions: {total_sessions}\n")
+        print("Sessions by profile:")
+
+        for profile, count in sorted(profile_count.items(), key=lambda x: x[1], reverse=True):
+            percentage = (count / total_sessions) * 100
+            print(f"  {profile}: {count} ({percentage:.1f}%)")
+        print()
+
 
 def launch_session(profile_name: Optional[str] = None, extra_args: list = None):
     """Launch Claude Code with the specified profile"""
     manager = ProfileManager()
+    alias_manager = AliasManager()
+
+    # Check for workspace profile first
+    if profile_name is None:
+        workspace_profile = WorkspaceManager.get_workspace_profile()
+        if workspace_profile:
+            print(f"📁 Using workspace profile: {workspace_profile}")
+            profile_name = workspace_profile
+
+    # Resolve alias if provided
+    if profile_name:
+        resolved_name = alias_manager.resolve_alias(profile_name)
+        if resolved_name != profile_name:
+            print(f"🔗 Resolved alias '{profile_name}' -> '{resolved_name}'")
+            profile_name = resolved_name
+
     profile = manager.get_profile(profile_name)
 
     # Build environment
@@ -187,11 +706,27 @@ def launch_session(profile_name: Optional[str] = None, extra_args: list = None):
     print(f"   Base URL: {profile.get('base_url', 'default')}")
     print()
 
+    # Log session start
+    Logger.log('session_start', profile_display, {'cwd': os.getcwd()})
+
     # Launch Claude Code
     try:
-        subprocess.run(cmd, env=env)
+        proc = subprocess.Popen(cmd, env=env)
+
+        # Track session
+        session_mgr = SessionManager()
+        session_mgr.add_session(proc.pid, profile_display)
+
+        # Wait for process to complete
+        proc.wait()
+
+        # Remove session when done
+        session_mgr.remove_session(proc.pid)
+        Logger.log('session_end', profile_display)
+
     except KeyboardInterrupt:
         print("\n\nSession terminated.")
+        Logger.log('session_interrupted', profile_display)
     except FileNotFoundError:
         print("Error: 'claude' command not found. Is Claude Code installed?")
         sys.exit(1)
@@ -199,45 +734,93 @@ def launch_session(profile_name: Optional[str] = None, extra_args: list = None):
 
 def print_usage():
     """Print usage information"""
-    print("""
-Claude Code Switcher - Manage multiple model profiles and launch isolated sessions
+    print(f"""
+Claude Code Switcher v{VERSION} - Manage multiple model profiles and launch isolated sessions
 
 USAGE:
-    claude-switcher start [profile] [--args]    Launch Claude Code with a profile
-    claude-switcher profile add <name>          Add a new profile
-    claude-switcher profile list                List all profiles
-    claude-switcher profile remove <name>       Remove a profile
-    claude-switcher profile default <name>      Set default profile
-    claude-switcher help                        Show this help
+    claude-switcher start [profile] [--args]      Launch Claude Code with a profile
+    claude-switcher profile <command> [args]      Manage profiles
+    claude-switcher alias <command> [args]        Manage profile aliases
+    claude-switcher session <command> [args]      Manage active sessions
+    claude-switcher workspace <command> [args]    Manage workspace profiles
+    claude-switcher backup <command> [args]       Backup and restore configuration
+    claude-switcher logs <command> [args]         View logs and statistics
+    claude-switcher version                       Show version
+    claude-switcher help                          Show this help
+
+PROFILE COMMANDS:
+    add <name>              Add a new profile
+    list                    List all profiles
+    remove <name>           Remove a profile
+    default <name>          Set default profile
+    clone <src> <dst>       Clone a profile
+    export <name> [file]    Export profile to JSON
+    import <file> [name]    Import profile from JSON
+    validate <name>         Validate profile configuration
+    env <name>              Show environment variables for profile
+
+ALIAS COMMANDS:
+    add <alias> <profile>   Create an alias for a profile
+    remove <alias>          Remove an alias
+    list                    List all aliases
+
+SESSION COMMANDS:
+    list                    List active sessions
+    kill <pid>              Terminate a session
+
+WORKSPACE COMMANDS:
+    init <profile>          Initialize workspace with a profile
+    remove                  Remove workspace configuration
+
+BACKUP COMMANDS:
+    create                  Create a backup of all profiles
+    restore <file>          Restore from a backup
+    list                    List all available backups
+
+LOG COMMANDS:
+    show [limit]            Show recent activity (default: 50 entries)
+    clear                   Clear all logs
+    stats                   Show usage statistics
 
 EXAMPLES:
-    # Add profiles
+    # Basic usage
     claude-switcher profile add claude
-    claude-switcher profile add glm
-
-    # Launch sessions (each isolated from others)
     claude-switcher start claude
-    claude-switcher start glm
-    claude-switcher start              # Use default profile
 
-    # List configured profiles
-    claude-switcher profile list
+    # Using aliases
+    claude-switcher alias add c claude
+    claude-switcher start c
 
-    # Set default profile
-    claude-switcher profile default glm
+    # Workspace-specific profiles
+    cd ~/my-project
+    claude-switcher workspace init glm
+    claude-switcher start  # Automatically uses glm profile
 
-PROFILES:
-    Profiles are stored in ~/.claude-switcher/profiles.json
-    Each profile contains:
-    - API key/token
-    - Base URL (API endpoint)
-    - Model mappings (haiku, sonnet, opus)
+    # Profile management
+    claude-switcher profile clone claude claude-test
+    claude-switcher profile validate glm
+    claude-switcher profile env claude
 
-WHY USE THIS:
-    - Run multiple Claude Code sessions with different models simultaneously
-    - Switch between Claude and GLM without breaking existing sessions
-    - Keep credentials organized and secure
-    - No manual config file editing
+    # Session management
+    claude-switcher session list
+    claude-switcher session kill 12345
+
+    # Backup and restore
+    claude-switcher backup create
+    claude-switcher backup list
+    claude-switcher backup restore ~/.claude-switcher/backups/backup_20251107_120000.json
+
+    # View logs and stats
+    claude-switcher logs show 100
+    claude-switcher logs stats
+
+DATA LOCATIONS:
+    Profiles:  ~/.claude-switcher/profiles.json
+    Aliases:   ~/.claude-switcher/aliases.json
+    Sessions:  ~/.claude-switcher/sessions.json
+    Logs:      ~/.claude-switcher/logs/
+    Backups:   ~/.claude-switcher/backups/
+    Workspace: ./.claude-switcher.json (per-directory)
 """)
 
 
@@ -248,8 +831,11 @@ def main():
 
     command = sys.argv[1]
 
-    if command == 'help' or command == '--help' or command == '-h':
+    if command in ['help', '--help', '-h']:
         print_usage()
+
+    elif command in ['version', '--version', '-v']:
+        print(f"Claude Code Switcher v{VERSION}")
 
     elif command == 'start':
         profile = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith('-') else None
@@ -259,7 +845,7 @@ def main():
     elif command == 'profile':
         if len(sys.argv) < 3:
             print("Error: Missing profile subcommand")
-            print("Use: claude-switcher profile [add|list|remove|default]")
+            print("Use: claude-switcher profile [add|list|remove|default|clone|export|import|validate|env]")
             sys.exit(1)
 
         subcommand = sys.argv[2]
@@ -287,8 +873,173 @@ def main():
                 sys.exit(1)
             manager.set_default(sys.argv[3])
 
+        elif subcommand == 'clone':
+            if len(sys.argv) < 5:
+                print("Error: Missing source and/or destination profile names")
+                print("Use: claude-switcher profile clone <source> <destination>")
+                sys.exit(1)
+            manager.clone_profile(sys.argv[3], sys.argv[4])
+
+        elif subcommand == 'export':
+            if len(sys.argv) < 4:
+                print("Error: Missing profile name")
+                print("Use: claude-switcher profile export <name> [output-file]")
+                sys.exit(1)
+            output_file = sys.argv[4] if len(sys.argv) > 4 else None
+            manager.export_profile(sys.argv[3], output_file)
+
+        elif subcommand == 'import':
+            if len(sys.argv) < 4:
+                print("Error: Missing input file")
+                print("Use: claude-switcher profile import <file> [name]")
+                sys.exit(1)
+            new_name = sys.argv[4] if len(sys.argv) > 4 else None
+            manager.import_profile(sys.argv[3], new_name)
+
+        elif subcommand == 'validate':
+            if len(sys.argv) < 4:
+                print("Error: Missing profile name")
+                print("Use: claude-switcher profile validate <name>")
+                sys.exit(1)
+            manager.validate_profile(sys.argv[3])
+
+        elif subcommand == 'env':
+            if len(sys.argv) < 4:
+                print("Error: Missing profile name")
+                print("Use: claude-switcher profile env <name>")
+                sys.exit(1)
+            manager.show_env(sys.argv[3])
+
         else:
             print(f"Error: Unknown profile subcommand: {subcommand}")
+            sys.exit(1)
+
+    elif command == 'alias':
+        if len(sys.argv) < 3:
+            print("Error: Missing alias subcommand")
+            print("Use: claude-switcher alias [add|remove|list]")
+            sys.exit(1)
+
+        subcommand = sys.argv[2]
+        alias_mgr = AliasManager()
+
+        if subcommand == 'add':
+            if len(sys.argv) < 5:
+                print("Error: Missing alias and/or profile name")
+                print("Use: claude-switcher alias add <alias> <profile>")
+                sys.exit(1)
+            alias_mgr.add_alias(sys.argv[3], sys.argv[4])
+
+        elif subcommand == 'remove':
+            if len(sys.argv) < 4:
+                print("Error: Missing alias name")
+                print("Use: claude-switcher alias remove <alias>")
+                sys.exit(1)
+            alias_mgr.remove_alias(sys.argv[3])
+
+        elif subcommand == 'list':
+            alias_mgr.list_aliases()
+
+        else:
+            print(f"Error: Unknown alias subcommand: {subcommand}")
+            sys.exit(1)
+
+    elif command == 'session':
+        if len(sys.argv) < 3:
+            print("Error: Missing session subcommand")
+            print("Use: claude-switcher session [list|kill]")
+            sys.exit(1)
+
+        subcommand = sys.argv[2]
+        session_mgr = SessionManager()
+
+        if subcommand == 'list':
+            session_mgr.list_sessions()
+
+        elif subcommand == 'kill':
+            if len(sys.argv) < 4:
+                print("Error: Missing PID")
+                print("Use: claude-switcher session kill <pid>")
+                sys.exit(1)
+            try:
+                pid = int(sys.argv[3])
+                session_mgr.kill_session(pid)
+            except ValueError:
+                print("Error: PID must be a number")
+                sys.exit(1)
+
+        else:
+            print(f"Error: Unknown session subcommand: {subcommand}")
+            sys.exit(1)
+
+    elif command == 'workspace':
+        if len(sys.argv) < 3:
+            print("Error: Missing workspace subcommand")
+            print("Use: claude-switcher workspace [init|remove]")
+            sys.exit(1)
+
+        subcommand = sys.argv[2]
+
+        if subcommand == 'init':
+            if len(sys.argv) < 4:
+                print("Error: Missing profile name")
+                print("Use: claude-switcher workspace init <profile>")
+                sys.exit(1)
+            WorkspaceManager.init_workspace(sys.argv[3])
+
+        elif subcommand == 'remove':
+            WorkspaceManager.remove_workspace()
+
+        else:
+            print(f"Error: Unknown workspace subcommand: {subcommand}")
+            sys.exit(1)
+
+    elif command == 'backup':
+        if len(sys.argv) < 3:
+            print("Error: Missing backup subcommand")
+            print("Use: claude-switcher backup [create|restore|list]")
+            sys.exit(1)
+
+        subcommand = sys.argv[2]
+        manager = ProfileManager()
+
+        if subcommand == 'create':
+            manager.backup_config()
+
+        elif subcommand == 'restore':
+            if len(sys.argv) < 4:
+                print("Error: Missing backup file")
+                print("Use: claude-switcher backup restore <file>")
+                sys.exit(1)
+            manager.restore_config(sys.argv[3])
+
+        elif subcommand == 'list':
+            manager.list_backups()
+
+        else:
+            print(f"Error: Unknown backup subcommand: {subcommand}")
+            sys.exit(1)
+
+    elif command == 'logs':
+        if len(sys.argv) < 3:
+            print("Error: Missing logs subcommand")
+            print("Use: claude-switcher logs [show|clear|stats]")
+            sys.exit(1)
+
+        subcommand = sys.argv[2]
+
+        if subcommand == 'show':
+            limit = int(sys.argv[3]) if len(sys.argv) > 3 else 50
+            Logger.show_logs(limit)
+
+        elif subcommand == 'clear':
+            Logger.clear_logs()
+
+        elif subcommand == 'stats':
+            Logger.stats()
+
+        else:
+            print(f"Error: Unknown logs subcommand: {subcommand}")
             sys.exit(1)
 
     else:
