@@ -35,7 +35,7 @@ When using Claude Code with multiple simultaneous sessions, changing the global 
 
 ```bash
 # Clone this repository
-git clone https://github.com/rolan86/claude-code-switcher.git
+git clone git@github.com:rolan86/claude-code-switcher.git
 cd claude-code-switcher
 
 # Run installer
@@ -48,7 +48,7 @@ claude-switcher help
 **Method 2: Manual Installation**
 
 ```bash
-# Download the script
+# Download the script directly (no git required)
 curl -O https://raw.githubusercontent.com/rolan86/claude-code-switcher/main/claude-switcher
 
 # Make it executable and move to PATH
