@@ -1,6 +1,8 @@
-# Quick Start Guide
+# Quick Start Guide - v2.0
 
 ## 5-Minute Setup
+
+**New in v2.0:** More features below! Aliases, workspace profiles, logging, and more.
 
 ### 1. Install (already done!)
 ```bash
@@ -74,4 +76,26 @@ claude-switcher help
 - Use `claude-switcher start <profile>` for other models (GLM, custom)
 - Each session is isolated - they won't interfere!
 
-**See TESTING_GUIDE.md for detailed testing instructions.**
+## New in v2.0 - Quick Tips
+
+```bash
+# Create aliases for faster access
+claude-switcher alias add c claude
+claude-switcher start c  # Much faster!
+
+# Set up workspace profiles (auto-select per project)
+cd ~/my-project
+claude-switcher workspace init glm
+claude-switcher start  # Automatically uses glm!
+
+# View usage statistics
+claude-switcher logs stats
+
+# Backup your configuration
+claude-switcher backup create
+
+# See all commands
+claude-switcher help
+```
+
+**See README.md for complete documentation and TESTING_GUIDE.md for testing instructions.**
