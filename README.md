@@ -31,23 +31,58 @@ When using Claude Code with multiple simultaneous sessions, changing the global 
 
 ### Install
 
+**Method 1: Clone & Install (Recommended)**
+
 ```bash
 # Clone this repository
-git clone https://github.com/yourusername/claude-code-switcher.git
+git clone https://github.com/rolan86/claude-code-switcher.git
 cd claude-code-switcher
 
 # Run installer
-chmod +x install.sh
 ./install.sh
+
+# Verify installation
+claude-switcher help
 ```
 
-Or manually:
+**Method 2: Manual Installation**
 
 ```bash
-# Copy to PATH
-sudo cp claude-switcher /usr/local/bin/
-sudo chmod +x /usr/local/bin/claude-switcher
+# Download the script
+curl -O https://raw.githubusercontent.com/rolan86/claude-code-switcher/main/claude-switcher
+
+# Make it executable and move to PATH
+chmod +x claude-switcher
+sudo mv claude-switcher /usr/local/bin/
+
+# Verify
+claude-switcher help
 ```
+
+**Troubleshooting Installation**
+
+If you get "command not found" after installation:
+
+1. Check if `/usr/local/bin` is in your PATH:
+   ```bash
+   echo $PATH | grep /usr/local/bin
+   ```
+
+2. If not, add it to your shell profile:
+   ```bash
+   # For macOS (zsh)
+   echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.zshrc
+   source ~/.zshrc
+
+   # For Linux (bash)
+   echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bashrc
+   source ~/.bashrc
+   ```
+
+3. Verify Python 3 is installed:
+   ```bash
+   python3 --version
+   ```
 
 ## Quick Start
 
