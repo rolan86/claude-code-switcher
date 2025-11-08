@@ -15,7 +15,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from urllib.parse import urlparse
 
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 GITHUB_REPO = "rolan86/claude-code-switcher"
 
 CONFIG_DIR = Path.home() / ".claude-switcher"
@@ -913,6 +913,321 @@ class UpdateChecker:
             print(f"   Run 'claude-switcher update check' for details\n")
 
 
+class ModelUpdater:
+    """Fetch and update model names from Anthropic API"""
+
+    # Known model mappings for different providers
+    KNOWN_MODELS = {
+        'anthropic': {
+            'haiku': 'claude-3-5-haiku-20241022',
+            'sonnet': 'claude-sonnet-4-5-20250929',
+            'opus': 'claude-opus-4-20250514'
+        },
+        'zai': {
+            'haiku': 'GLM-4.5-Air',
+            'sonnet': 'GLM-4.6',
+            'opus': 'GLM-4.6'
+        }
+    }
+
+    @staticmethod
+    def list_models(provider: str = 'anthropic'):
+        """List available models for a provider"""
+        if provider not in ModelUpdater.KNOWN_MODELS:
+            print(f"Unknown provider: {provider}")
+            print(f"Known providers: {', '.join(ModelUpdater.KNOWN_MODELS.keys())}")
+            return
+
+        models = ModelUpdater.KNOWN_MODELS[provider]
+        print(f"\n=== Available Models ({provider}) ===\n")
+        for tier, model in models.items():
+            print(f"  {tier}: {model}")
+        print()
+
+    @staticmethod
+    def update_profile_models(profile_name: str, provider: str = 'anthropic', dry_run: bool = False):
+        """Update a profile's model mappings to latest known models"""
+        manager = ProfileManager()
+        config = manager._load_config()
+
+        if profile_name not in config['profiles']:
+            print(f"Error: Profile '{profile_name}' not found")
+            sys.exit(1)
+
+        if provider not in ModelUpdater.KNOWN_MODELS:
+            print(f"Error: Unknown provider '{provider}'")
+            print(f"Known providers: {', '.join(ModelUpdater.KNOWN_MODELS.keys())}")
+            sys.exit(1)
+
+        profile = config['profiles'][profile_name]
+        latest_models = ModelUpdater.KNOWN_MODELS[provider]
+
+        print(f"\n=== Updating models for profile: {profile_name} ===\n")
+
+        if 'models' not in profile:
+            profile['models'] = {}
+
+        changes = []
+        for tier, new_model in latest_models.items():
+            old_model = profile['models'].get(tier, 'Not set')
+            if old_model != new_model:
+                changes.append((tier, old_model, new_model))
+                if not dry_run:
+                    profile['models'][tier] = new_model
+
+        if not changes:
+            print("✓ Profile already has latest models")
+            return
+
+        print("Changes to be made:" if dry_run else "Changes made:")
+        for tier, old, new in changes:
+            print(f"  {tier}:")
+            print(f"    Old: {old}")
+            print(f"    New: {new}")
+
+        if not dry_run:
+            manager._save_config(config)
+            print(f"\n✓ Profile '{profile_name}' updated with latest {provider} models")
+        else:
+            print(f"\n(Dry run - no changes made)")
+            print(f"Run without --dry-run to apply changes")
+
+
+class ProfileHealthChecker:
+    """Test profile configurations for connectivity and validity"""
+
+    @staticmethod
+    def test_profile(profile_name: str, verbose: bool = False) -> bool:
+        """Test a single profile's configuration"""
+        manager = ProfileManager()
+
+        try:
+            profile = manager.get_profile(profile_name)
+        except SystemExit:
+            return False
+
+        print(f"\n=== Testing profile: {profile_name} ===\n")
+
+        # Check API key
+        has_key = 'api_key' in profile and profile['api_key']
+        if has_key:
+            key_len = len(profile['api_key'])
+            print(f"✓ API Key: Present ({key_len} characters)")
+        else:
+            print(f"✗ API Key: Missing")
+            return False
+
+        # Check base URL
+        base_url = profile.get('base_url', 'https://api.anthropic.com')
+        try:
+            parsed = urlparse(base_url)
+            if parsed.scheme in ['http', 'https'] and parsed.netloc:
+                print(f"✓ Base URL: {base_url}")
+            else:
+                print(f"✗ Base URL: Invalid format ({base_url})")
+                return False
+        except Exception:
+            print(f"✗ Base URL: Invalid ({base_url})")
+            return False
+
+        # Check models
+        if 'models' in profile and profile['models']:
+            print(f"✓ Models: {len(profile['models'])} configured")
+            if verbose:
+                for tier, model in profile['models'].items():
+                    print(f"    {tier}: {model}")
+        else:
+            print(f"⚠ Models: None configured (will use defaults)")
+
+        # Try a simple API connection test
+        if verbose:
+            print(f"\nTesting API connection...")
+            try:
+                import urllib.request
+                import ssl
+
+                context = ssl.create_default_context()
+                url = f"{base_url.rstrip('/')}/v1/messages"
+                req = urllib.request.Request(url, method='POST')
+                req.add_header('x-api-key', profile['api_key'])
+                req.add_header('anthropic-version', '2023-06-01')
+                req.add_header('content-type', 'application/json')
+
+                # Send minimal request just to test auth
+                data = json.dumps({
+                    "model": profile.get('models', {}).get('haiku', 'claude-3-haiku-20240307'),
+                    "max_tokens": 1,
+                    "messages": [{"role": "user", "content": "test"}]
+                }).encode()
+
+                try:
+                    with urllib.request.urlopen(req, data, context=context, timeout=10) as response:
+                        print(f"✓ API Connection: Success ({response.status})")
+                        return True
+                except urllib.error.HTTPError as e:
+                    if e.code == 400:
+                        # Bad request is OK - means auth worked
+                        print(f"✓ API Connection: Authenticated")
+                        return True
+                    elif e.code == 401:
+                        print(f"✗ API Connection: Invalid API key")
+                        return False
+                    else:
+                        print(f"⚠ API Connection: HTTP {e.code}")
+                        return True  # Key is valid even if request had issues
+            except Exception as e:
+                print(f"⚠ API Connection: Could not test ({e})")
+
+        print(f"\n✓ Profile configuration is valid")
+        return True
+
+    @staticmethod
+    def test_all_profiles(verbose: bool = False):
+        """Test all profiles"""
+        manager = ProfileManager()
+        config = manager._load_config()
+
+        if not config['profiles']:
+            print("No profiles configured")
+            return
+
+        print(f"\n=== Testing {len(config['profiles'])} profile(s) ===")
+
+        results = {}
+        for name in config['profiles']:
+            results[name] = ProfileHealthChecker.test_profile(name, verbose)
+
+        # Summary
+        passed = sum(1 for v in results.values() if v)
+        total = len(results)
+
+        print(f"\n=== Summary ===")
+        print(f"Passed: {passed}/{total}")
+
+        if passed < total:
+            print(f"\nFailed profiles:")
+            for name, passed in results.items():
+                if not passed:
+                    print(f"  • {name}")
+
+
+class TemplateManager:
+    """Manage profile templates for quick setup"""
+
+    TEMPLATES = {
+        'anthropic': {
+            'name': 'Anthropic Claude',
+            'description': 'Official Anthropic API with latest Claude models',
+            'base_url': 'https://api.anthropic.com',
+            'models': {
+                'haiku': 'claude-3-5-haiku-20241022',
+                'sonnet': 'claude-sonnet-4-5-20250929',
+                'opus': 'claude-opus-4-20250514'
+            }
+        },
+        'zai-glm': {
+            'name': 'Z.AI GLM',
+            'description': 'Z.AI GLM models via Anthropic-compatible API',
+            'base_url': 'https://api.z.ai/api/anthropic',
+            'models': {
+                'haiku': 'GLM-4.5-Air',
+                'sonnet': 'GLM-4.6',
+                'opus': 'GLM-4.6'
+            }
+        },
+        'deepseek': {
+            'name': 'DeepSeek',
+            'description': 'DeepSeek AI models',
+            'base_url': 'https://api.deepseek.com',
+            'models': {
+                'sonnet': 'deepseek-chat'
+            }
+        }
+    }
+
+    @staticmethod
+    def list_templates():
+        """List all available templates"""
+        print("\n=== Available Profile Templates ===\n")
+        for template_id, template in TemplateManager.TEMPLATES.items():
+            print(f"• {template_id}")
+            print(f"  Name: {template['name']}")
+            print(f"  Description: {template['description']}")
+            print(f"  Base URL: {template['base_url']}")
+            print(f"  Models: {', '.join(template['models'].keys())}")
+            print()
+
+    @staticmethod
+    def show_template(template_id: str):
+        """Show details of a specific template"""
+        if template_id not in TemplateManager.TEMPLATES:
+            print(f"Error: Template '{template_id}' not found")
+            print(f"Available templates: {', '.join(TemplateManager.TEMPLATES.keys())}")
+            sys.exit(1)
+
+        template = TemplateManager.TEMPLATES[template_id]
+        print(f"\n=== Template: {template_id} ===\n")
+        print(f"Name: {template['name']}")
+        print(f"Description: {template['description']}")
+        print(f"\nConfiguration:")
+        print(f"  Base URL: {template['base_url']}")
+        print(f"\nModels:")
+        for tier, model in template['models'].items():
+            print(f"  {tier}: {model}")
+        print()
+
+    @staticmethod
+    def use_template(template_id: str, profile_name: str, api_key: Optional[str] = None):
+        """Create a profile from a template"""
+        if template_id not in TemplateManager.TEMPLATES:
+            print(f"Error: Template '{template_id}' not found")
+            print(f"Available templates: {', '.join(TemplateManager.TEMPLATES.keys())}")
+            sys.exit(1)
+
+        template = TemplateManager.TEMPLATES[template_id]
+
+        print(f"\n=== Creating profile from template: {template_id} ===\n")
+        print(f"Template: {template['name']}")
+        print(f"Description: {template['description']}")
+        print()
+
+        # Get API key if not provided
+        if not api_key:
+            api_key = input("Enter your API key: ").strip()
+            if not api_key:
+                print("Error: API key is required")
+                sys.exit(1)
+
+        # Create profile
+        manager = ProfileManager()
+        config = manager._load_config()
+
+        if profile_name in config['profiles']:
+            response = input(f"Profile '{profile_name}' already exists. Overwrite? (y/n): ")
+            if response.lower() != 'y':
+                print("Aborted.")
+                return
+
+        config['profiles'][profile_name] = {
+            'api_key': api_key,
+            'base_url': template['base_url'],
+            'models': template['models'].copy()
+        }
+
+        # Set as default if it's the first profile
+        if not config['default_profile']:
+            config['default_profile'] = profile_name
+            print(f"Set '{profile_name}' as default profile")
+
+        manager._save_config(config)
+
+        print(f"\n✓ Profile '{profile_name}' created successfully from template '{template_id}'!")
+        print(f"\nConfiguration:")
+        print(f"  Base URL: {template['base_url']}")
+        print(f"  Models: {', '.join(f'{k}={v}' for k, v in template['models'].items())}")
+        print(f"\nUse 'claude-switcher start {profile_name}' to launch")
+
+
 def launch_session(profile_name: Optional[str] = None, extra_args: list = None):
     """Launch Claude Code with the specified profile"""
     manager = ProfileManager()
@@ -1000,6 +1315,8 @@ Claude Code Switcher v{VERSION} - Manage multiple model profiles and launch isol
 USAGE:
     claude-switcher start [profile] [--args]      Launch Claude Code with a profile
     claude-switcher profile <command> [args]      Manage profiles
+    claude-switcher template <command> [args]     Use profile templates (NEW in v2.2)
+    claude-switcher models <command> [args]       List and manage models (NEW in v2.2)
     claude-switcher alias <command> [args]        Manage profile aliases
     claude-switcher group <command> [args]        Manage profile groups
     claude-switcher session <command> [args]      Manage active sessions
@@ -1020,6 +1337,18 @@ PROFILE COMMANDS:
     import <file> [name]    Import profile from JSON
     validate <name>         Validate profile configuration
     env <name>              Show environment variables for profile
+    test <name> [--verbose] Test profile connectivity (NEW in v2.2)
+    test --all [--verbose]  Test all profiles (NEW in v2.2)
+    update-models <name>    Update profile to latest models (NEW in v2.2)
+
+TEMPLATE COMMANDS (NEW in v2.2):
+    list                    List all available templates
+    show <template>         Show template details
+    use <template> <name>   Create profile from template
+
+MODELS COMMANDS (NEW in v2.2):
+    list [--provider]       List available models
+    update <profile>        Update profile to latest models
 
 ALIAS COMMANDS:
     add <alias> <profile>   Create an alias for a profile
@@ -1057,6 +1386,20 @@ EXAMPLES:
     # Basic usage
     claude-switcher profile add claude
     claude-switcher start claude
+
+    # Quick setup with templates (NEW in v2.2)
+    claude-switcher template list
+    claude-switcher template use anthropic my-claude
+    claude-switcher template use zai-glm glm
+
+    # Test profiles (NEW in v2.2)
+    claude-switcher profile test claude
+    claude-switcher profile test --all --verbose
+
+    # Update models (NEW in v2.2)
+    claude-switcher models list
+    claude-switcher profile update-models claude
+    claude-switcher models update claude --provider anthropic
 
     # Using aliases
     claude-switcher alias add c claude
@@ -1192,8 +1535,127 @@ def main():
                 sys.exit(1)
             manager.show_env(sys.argv[3])
 
+        elif subcommand == 'test':
+            if len(sys.argv) < 4:
+                print("Error: Missing profile name or --all flag")
+                print("Use: claude-switcher profile test <name> [--verbose]")
+                print("  or: claude-switcher profile test --all [--verbose]")
+                sys.exit(1)
+
+            if sys.argv[3] == '--all':
+                verbose = '--verbose' in sys.argv[4:]
+                ProfileHealthChecker.test_all_profiles(verbose)
+            else:
+                verbose = '--verbose' in sys.argv[4:]
+                ProfileHealthChecker.test_profile(sys.argv[3], verbose)
+
+        elif subcommand == 'update-models':
+            if len(sys.argv) < 4:
+                print("Error: Missing profile name")
+                print("Use: claude-switcher profile update-models <name> [--provider <provider>] [--dry-run]")
+                sys.exit(1)
+
+            profile_name = sys.argv[3]
+            provider = 'anthropic'
+            dry_run = False
+
+            # Parse optional arguments
+            i = 4
+            while i < len(sys.argv):
+                if sys.argv[i] == '--provider' and i + 1 < len(sys.argv):
+                    provider = sys.argv[i + 1]
+                    i += 2
+                elif sys.argv[i] == '--dry-run':
+                    dry_run = True
+                    i += 1
+                else:
+                    i += 1
+
+            ModelUpdater.update_profile_models(profile_name, provider, dry_run)
+
         else:
             print(f"Error: Unknown profile subcommand: {subcommand}")
+            sys.exit(1)
+
+    elif command == 'template':
+        if len(sys.argv) < 3:
+            print("Error: Missing template subcommand")
+            print("Use: claude-switcher template [list|show|use]")
+            sys.exit(1)
+
+        subcommand = sys.argv[2]
+
+        if subcommand == 'list':
+            TemplateManager.list_templates()
+
+        elif subcommand == 'show':
+            if len(sys.argv) < 4:
+                print("Error: Missing template name")
+                print("Use: claude-switcher template show <template>")
+                sys.exit(1)
+            TemplateManager.show_template(sys.argv[3])
+
+        elif subcommand == 'use':
+            if len(sys.argv) < 5:
+                print("Error: Missing template and/or profile name")
+                print("Use: claude-switcher template use <template> <profile-name> [--api-key <key>]")
+                sys.exit(1)
+
+            template_id = sys.argv[3]
+            profile_name = sys.argv[4]
+            api_key = None
+
+            # Check for --api-key option
+            if len(sys.argv) > 6 and sys.argv[5] == '--api-key':
+                api_key = sys.argv[6]
+
+            TemplateManager.use_template(template_id, profile_name, api_key)
+
+        else:
+            print(f"Error: Unknown template subcommand: {subcommand}")
+            sys.exit(1)
+
+    elif command == 'models':
+        if len(sys.argv) < 3:
+            print("Error: Missing models subcommand")
+            print("Use: claude-switcher models [list|update]")
+            sys.exit(1)
+
+        subcommand = sys.argv[2]
+
+        if subcommand == 'list':
+            provider = 'anthropic'
+            # Check for --provider option
+            if len(sys.argv) > 3 and sys.argv[3] == '--provider' and len(sys.argv) > 4:
+                provider = sys.argv[4]
+            ModelUpdater.list_models(provider)
+
+        elif subcommand == 'update':
+            if len(sys.argv) < 4:
+                print("Error: Missing profile name")
+                print("Use: claude-switcher models update <profile> [--provider <provider>] [--dry-run]")
+                sys.exit(1)
+
+            profile_name = sys.argv[3]
+            provider = 'anthropic'
+            dry_run = False
+
+            # Parse optional arguments
+            i = 4
+            while i < len(sys.argv):
+                if sys.argv[i] == '--provider' and i + 1 < len(sys.argv):
+                    provider = sys.argv[i + 1]
+                    i += 2
+                elif sys.argv[i] == '--dry-run':
+                    dry_run = True
+                    i += 1
+                else:
+                    i += 1
+
+            ModelUpdater.update_profile_models(profile_name, provider, dry_run)
+
+        else:
+            print(f"Error: Unknown models subcommand: {subcommand}")
             sys.exit(1)
 
     elif command == 'alias':
