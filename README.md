@@ -1,8 +1,10 @@
-# Claude Code Switcher v2.0
+# Claude Code Switcher v2.1
 
 A powerful CLI tool to manage multiple model profiles and launch isolated Claude Code sessions. Perfect for switching between Claude and GLM models without breaking active sessions.
 
-**New in v2.0:** Profile management, aliases, workspace profiles, session tracking, logging, backups, and much more!
+**New in v2.1:** Profile groups (launch multiple profiles at once) and automatic update checker!
+
+**Also in v2.0:** Profile management, aliases, workspace profiles, session tracking, logging, backups, and much more!
 
 ## The Problem
 
@@ -25,7 +27,11 @@ When using Claude Code with multiple simultaneous sessions, changing the global 
 🔐 **Secure** - Credentials stored locally in `~/.claude-switcher/`
 🌍 **Cross-Platform** - Works on macOS and Linux
 
-### New in v2.0
+### New in v2.1
+🎭 **Profile Groups** - Launch multiple profiles simultaneously with one command
+🔔 **Update Checker** - Automatic daily checks for new versions
+
+### Also in v2.0
 🎯 **Profile Aliases** - Create short aliases for frequently used profiles
 📁 **Workspace Profiles** - Auto-select profiles based on current directory
 👁️ **Environment Viewer** - See exactly what env vars will be set
@@ -173,6 +179,12 @@ claude-switcher alias add <alias> <prof> # Create alias
 claude-switcher alias list               # List aliases
 claude-switcher alias remove <alias>     # Remove alias
 
+# Groups (NEW in v2.1)
+claude-switcher group add <name> --profiles <p1,p2,...>  # Create group
+claude-switcher group launch <name>                      # Launch group
+claude-switcher group list                               # List groups
+claude-switcher group remove <name>                      # Remove group
+
 # Workspace
 claude-switcher workspace init <profile> # Set workspace default
 claude-switcher workspace remove         # Remove workspace config
@@ -190,6 +202,9 @@ claude-switcher backup restore <file>    # Restore from backup
 claude-switcher logs show [limit]        # Show activity log
 claude-switcher logs stats               # Usage statistics
 claude-switcher logs clear               # Clear logs
+
+# Updates (NEW in v2.1)
+claude-switcher update check             # Check for new versions
 ```
 
 ### Profile Configuration
@@ -263,6 +278,55 @@ claude-switcher start g    # Launches GLM profile
 # List all aliases
 claude-switcher alias list
 ```
+
+### Using Profile Groups (NEW in v2.1)
+
+Profile groups let you launch multiple profiles at once - perfect for workflows that need multiple models running simultaneously.
+
+```bash
+# Create a development group with multiple profiles
+claude-switcher group add development \
+  --profiles claude,glm \
+  --desc "Development environment with both models"
+
+# Launch all profiles in the group at once
+claude-switcher group launch development
+# This opens separate Claude Code sessions for both Claude and GLM
+
+# List all groups
+claude-switcher group list
+# Output:
+# === Profile Groups ===
+#
+# • development
+#   Description: Development environment with both models
+#   Profiles: claude, glm
+#   Created: 2025-11-08T...
+
+# View active sessions
+claude-switcher session list
+# Output:
+# === Active Sessions ===
+#
+# • PID: 12345
+#   Profile: development:claude
+#   Started: 2025-11-08T10:30:00
+#   Directory: /home/user/projects/my-app
+#
+# • PID: 12346
+#   Profile: development:glm
+#   Started: 2025-11-08T10:30:01
+#   Directory: /home/user/projects/my-app
+
+# Remove a group when no longer needed
+claude-switcher group remove development
+```
+
+**Common use cases for groups:**
+- **Multi-model testing**: Compare responses from Claude and GLM side-by-side
+- **Project workflows**: Launch all tools needed for a specific project
+- **Team environments**: Share group configurations across your team
+- **Development contexts**: Different groups for frontend, backend, testing, etc.
 
 ### Workspace-Specific Profiles
 
@@ -355,6 +419,44 @@ claude-switcher logs stats
 claude-switcher logs clear
 ```
 
+### Checking for Updates (NEW in v2.1)
+
+Claude Code Switcher automatically checks for updates once per day when you run `claude-switcher start`. You can also manually check for updates:
+
+```bash
+# Check for new versions
+claude-switcher update check
+
+# If an update is available, you'll see:
+# ============================================================
+# 🎉 Update Available!
+# ============================================================
+# Current version: v2.0.0
+# Latest version:  v2.1.0
+#
+# Release URL: https://github.com/rolan86/claude-code-switcher/releases/tag/v2.1.0
+#
+# Release Notes:
+# - Added profile groups for launching multiple profiles at once
+# - Added automatic update checker
+# ...
+#
+# To update, run:
+#   cd ~/claude-code-switcher
+#   git pull origin main
+#   ./install.sh
+# ============================================================
+
+# If you're up to date:
+# ✓ You're running the latest version (v2.1.0)
+```
+
+**How it works:**
+- Automatic check runs once per day when you use `claude-switcher start`
+- Only shows a notification if an update is available
+- Manual check with `claude-switcher update check` shows full details
+- Checks are lightweight and don't slow down the CLI
+
 ### Creating a Custom Profile
 
 ```bash
@@ -421,11 +523,13 @@ Claude Code Switcher stores all its data in `~/.claude-switcher/`:
 ~/.claude-switcher/
 ├── profiles.json      # Your profile configurations
 ├── aliases.json       # Profile aliases
+├── groups.json        # Profile groups (NEW in v2.1)
 ├── sessions.json      # Active session tracking
 ├── logs/              # Activity logs
 │   └── activity_YYYYMM.log
-└── backups/           # Configuration backups
-    └── backup_YYYYMMDD_HHMMSS.json
+├── backups/           # Configuration backups
+│   └── backup_YYYYMMDD_HHMMSS.json
+└── .last_update_check # Last update check timestamp (NEW in v2.1)
 ```
 
 Additionally, workspace-specific configurations are stored in `.claude-switcher.json` in each project directory.
@@ -444,6 +548,26 @@ rm -rf ~/.claude-switcher/
 ```
 
 ## Changelog
+
+### v2.1.0 (2025-11-08)
+
+**Major Features:**
+- **Profile Groups**: Launch multiple profiles simultaneously with one command
+  - Create groups with `group add <name> --profiles <p1,p2,...>`
+  - Launch all profiles in a group with `group launch <name>`
+  - Track group sessions separately
+  - Perfect for multi-model testing and workflows
+- **Update Checker**: Automatic version checking
+  - Checks for updates once per day on `start` command
+  - Manual check with `update check` command
+  - Shows release notes and update instructions
+  - Non-intrusive notifications
+
+**Technical Improvements:**
+- Added GroupManager class for group operations
+- Added UpdateChecker class with GitHub API integration
+- Enhanced session tracking to support group launches
+- Improved logging with group session events
 
 ### v2.0.0 (2025-11-07)
 
