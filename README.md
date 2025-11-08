@@ -1,6 +1,8 @@
-# Claude Code Switcher v2.0
+# Claude Code Switcher v2.1
 
 A powerful CLI tool to manage multiple model profiles and launch isolated Claude Code sessions. Perfect for switching between Claude and GLM models without breaking active sessions.
+
+**New in v2.1:** Profile groups (launch multiple profiles at once) and update checker!
 
 **New in v2.0:** Profile management, aliases, workspace profiles, session tracking, logging, backups, and much more!
 
@@ -24,6 +26,10 @@ When using Claude Code with multiple simultaneous sessions, changing the global 
 🔧 **Easy Switching** - One command to launch with any profile
 🔐 **Secure** - Credentials stored locally in `~/.claude-switcher/`
 🌍 **Cross-Platform** - Works on macOS and Linux
+
+### New in v2.1
+👥 **Profile Groups** - Launch multiple profiles simultaneously
+🔄 **Update Checker** - Check for new versions from GitHub
 
 ### New in v2.0
 🎯 **Profile Aliases** - Create short aliases for frequently used profiles
@@ -173,6 +179,14 @@ claude-switcher alias add <alias> <prof> # Create alias
 claude-switcher alias list               # List aliases
 claude-switcher alias remove <alias>     # Remove alias
 
+# Groups
+claude-switcher group create <name> <p...> # Create group
+claude-switcher group add <group> <prof> # Add to group
+claude-switcher group remove <grp> <prf> # Remove from group
+claude-switcher group delete <name>      # Delete group
+claude-switcher group list               # List groups
+claude-switcher group start <name>       # Launch all in group
+
 # Workspace
 claude-switcher workspace init <profile> # Set workspace default
 claude-switcher workspace remove         # Remove workspace config
@@ -190,6 +204,9 @@ claude-switcher backup restore <file>    # Restore from backup
 claude-switcher logs show [limit]        # Show activity log
 claude-switcher logs stats               # Usage statistics
 claude-switcher logs clear               # Clear logs
+
+# Update
+claude-switcher update check             # Check for new version
 ```
 
 ### Profile Configuration
@@ -262,6 +279,41 @@ claude-switcher start g    # Launches GLM profile
 
 # List all aliases
 claude-switcher alias list
+```
+
+### Using Profile Groups
+
+```bash
+# Create a group for side-by-side comparison
+claude-switcher group create comparison claude glm
+
+# Launch all profiles in the group (opens multiple terminals)
+claude-switcher group start comparison
+
+# Create a work group
+claude-switcher group create work claude-work glm-work custom
+
+# Add another profile to an existing group
+claude-switcher group add work test-profile
+
+# Remove a profile from a group
+claude-switcher group remove work test-profile
+
+# List all groups
+claude-switcher group list
+# Output:
+# === Profile Groups ===
+#
+# • comparison
+#   Profiles: claude, glm
+#   Created: 2025-11-07T15:30:00
+#
+# • work
+#   Profiles: claude-work, glm-work, custom
+#   Created: 2025-11-07T15:35:00
+
+# Delete a group
+claude-switcher group delete comparison
 ```
 
 ### Workspace-Specific Profiles
@@ -355,6 +407,23 @@ claude-switcher logs stats
 claude-switcher logs clear
 ```
 
+### Checking for Updates
+
+```bash
+# Check if a newer version is available
+claude-switcher update check
+# Output:
+# ✓ You're using the latest version (v2.1.0)
+#
+# Or if an update is available:
+# 🎉 New version available!
+#    Current: v2.1.0
+#    Latest:  v2.2.0
+#
+#    Release notes: https://github.com/rolan86/claude-code-switcher/releases/latest
+#    Update: git pull origin main && ./install.sh
+```
+
 ### Creating a Custom Profile
 
 ```bash
@@ -421,6 +490,7 @@ Claude Code Switcher stores all its data in `~/.claude-switcher/`:
 ~/.claude-switcher/
 ├── profiles.json      # Your profile configurations
 ├── aliases.json       # Profile aliases
+├── groups.json        # Profile groups
 ├── sessions.json      # Active session tracking
 ├── logs/              # Activity logs
 │   └── activity_YYYYMM.log
@@ -444,6 +514,22 @@ rm -rf ~/.claude-switcher/
 ```
 
 ## Changelog
+
+### v2.1.0 (2025-11-07)
+
+**New Features:**
+- Profile Groups: Create groups of profiles and launch them simultaneously
+  - `group create` - Create a new group
+  - `group add/remove` - Manage profiles in groups
+  - `group start` - Launch all profiles in a group
+  - `group list` - View all configured groups
+- Update Checker: Check for new versions from GitHub
+  - `update check` - Check if a newer version is available
+
+**Improvements:**
+- Enhanced help documentation with group commands
+- Better terminal detection for launching multiple sessions
+- Version bumped to 2.1.0
 
 ### v2.0.0 (2025-11-07)
 
