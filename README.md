@@ -715,7 +715,7 @@ rm -rf ~/.claude-switcher/
 - Enhanced profile management with test and update-models subcommands
 - Improved error handling and validation throughout
 
-**Co-authored-by:** GitHub User (requested co-authorship)
+**Co-authored-by:** Merryl DMello <rolan86@gmail.com>
 
 ### v2.1.0 (2025-11-08)
 
