@@ -539,9 +539,13 @@ class GroupManager:
             # Build environment
             env = os.environ.copy()
 
-            # Set API credentials
-            if 'api_key' in profile:
+            # Set or unset API credentials based on profile
+            if 'api_key' in profile and profile['api_key']:
                 env['ANTHROPIC_API_KEY'] = profile['api_key']
+            else:
+                # Explicitly unset API key to use claude.ai authentication
+                # This prevents conflicts when using profiles without API keys
+                env.pop('ANTHROPIC_API_KEY', None)
 
             # Set base URL
             if 'base_url' in profile and profile['base_url']:
@@ -1250,9 +1254,13 @@ def launch_session(profile_name: Optional[str] = None, extra_args: list = None):
     # Build environment
     env = os.environ.copy()
 
-    # Set API credentials
-    if 'api_key' in profile:
+    # Set or unset API credentials based on profile
+    if 'api_key' in profile and profile['api_key']:
         env['ANTHROPIC_API_KEY'] = profile['api_key']
+    else:
+        # Explicitly unset API key to use claude.ai authentication
+        # This prevents conflicts when using profiles without API keys
+        env.pop('ANTHROPIC_API_KEY', None)
 
     # Set base URL
     if 'base_url' in profile and profile['base_url']:
