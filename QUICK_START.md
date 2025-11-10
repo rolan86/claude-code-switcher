@@ -1,6 +1,8 @@
-# Quick Start Guide - v2.0
+# Quick Start Guide - v2.1
 
 ## 5-Minute Setup
+
+**New in v2.1:** Profile groups and update checker!
 
 **New in v2.0:** More features below! Aliases, workspace profiles, logging, and more.
 
@@ -76,7 +78,18 @@ claude-switcher help
 - Use `claude-switcher start <profile>` for other models (GLM, custom)
 - Each session is isolated - they won't interfere!
 
-## New in v2.0 - Quick Tips
+## New in v2.1 - Quick Tips
+
+```bash
+# Create a group to launch multiple profiles at once
+claude-switcher group create comparison claude glm
+claude-switcher group start comparison  # Opens both!
+
+# Check for updates
+claude-switcher update check
+```
+
+## v2.0 Features - Quick Tips
 
 ```bash
 # Create aliases for faster access

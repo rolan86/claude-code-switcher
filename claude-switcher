@@ -291,7 +291,6 @@ class ProfileManager:
             key = profile['api_key']
             masked = key[:8] + '...' + key[-4:] if len(key) > 12 else '***'
             print(f"ANTHROPIC_API_KEY={masked}")
-            print(f"ANTHROPIC_AUTH_TOKEN={masked}")
 
         if 'base_url' in profile and profile['base_url']:
             print(f"ANTHROPIC_BASE_URL={profile['base_url']}")
@@ -543,7 +542,6 @@ class GroupManager:
             # Set API credentials
             if 'api_key' in profile:
                 env['ANTHROPIC_API_KEY'] = profile['api_key']
-                env['ANTHROPIC_AUTH_TOKEN'] = profile['api_key']
 
             # Set base URL
             if 'base_url' in profile and profile['base_url']:
@@ -1255,7 +1253,6 @@ def launch_session(profile_name: Optional[str] = None, extra_args: list = None):
     # Set API credentials
     if 'api_key' in profile:
         env['ANTHROPIC_API_KEY'] = profile['api_key']
-        env['ANTHROPIC_AUTH_TOKEN'] = profile['api_key']  # Some versions use this
 
     # Set base URL
     if 'base_url' in profile and profile['base_url']:
