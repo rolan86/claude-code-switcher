@@ -1467,7 +1467,7 @@ def main():
     elif command == 'profile':
         if len(sys.argv) < 3:
             print("Error: Missing profile subcommand")
-            print("Use: claude-switcher profile [add|list|remove|default|clone|export|import|validate|env]")
+            print("Use: claude-switcher profile [add|list|remove|default|clone|export|import|validate|env|test|update-models]")
             sys.exit(1)
 
         subcommand = sys.argv[2]
@@ -1572,6 +1572,7 @@ def main():
 
         else:
             print(f"Error: Unknown profile subcommand: {subcommand}")
+            print("Use: claude-switcher profile [add|list|remove|default|clone|export|import|validate|env|test|update-models]")
             sys.exit(1)
 
     elif command == 'template':
@@ -1610,6 +1611,7 @@ def main():
 
         else:
             print(f"Error: Unknown template subcommand: {subcommand}")
+            print("Use: claude-switcher template [list|show|use]")
             sys.exit(1)
 
     elif command == 'models':
@@ -1653,6 +1655,7 @@ def main():
 
         else:
             print(f"Error: Unknown models subcommand: {subcommand}")
+            print("Use: claude-switcher models [list|update]")
             sys.exit(1)
 
     elif command == 'alias':
@@ -1683,6 +1686,7 @@ def main():
 
         else:
             print(f"Error: Unknown alias subcommand: {subcommand}")
+            print("Use: claude-switcher alias [add|remove|list]")
             sys.exit(1)
 
     elif command == 'group':
@@ -1750,6 +1754,7 @@ def main():
 
         else:
             print(f"Error: Unknown group subcommand: {subcommand}")
+            print("Use: claude-switcher group [add|remove|list|launch]")
             sys.exit(1)
 
     elif command == 'session':
@@ -1778,6 +1783,7 @@ def main():
 
         else:
             print(f"Error: Unknown session subcommand: {subcommand}")
+            print("Use: claude-switcher session [list|kill]")
             sys.exit(1)
 
     elif command == 'workspace':
@@ -1800,6 +1806,7 @@ def main():
 
         else:
             print(f"Error: Unknown workspace subcommand: {subcommand}")
+            print("Use: claude-switcher workspace [init|remove]")
             sys.exit(1)
 
     elif command == 'backup':
@@ -1826,6 +1833,7 @@ def main():
 
         else:
             print(f"Error: Unknown backup subcommand: {subcommand}")
+            print("Use: claude-switcher backup [create|restore|list]")
             sys.exit(1)
 
     elif command == 'logs':
@@ -1848,6 +1856,7 @@ def main():
 
         else:
             print(f"Error: Unknown logs subcommand: {subcommand}")
+            print("Use: claude-switcher logs [show|clear|stats]")
             sys.exit(1)
 
     elif command == 'update':
@@ -1863,6 +1872,7 @@ def main():
 
         else:
             print(f"Error: Unknown update subcommand: {subcommand}")
+            print("Use: claude-switcher update [check]")
             sys.exit(1)
 
     else:
