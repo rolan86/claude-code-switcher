@@ -1,8 +1,10 @@
-# Claude Code Switcher v2.1
+# Claude Code Switcher v2.2
 
 A powerful CLI tool to manage multiple model profiles and launch isolated Claude Code sessions. Perfect for switching between Claude and GLM models without breaking active sessions.
 
-**New in v2.1:** Profile groups (launch multiple profiles at once) and automatic update checker!
+**New in v2.2:** Profile templates, health checks, and model auto-update!
+
+**Also in v2.1:** Profile groups (launch multiple profiles at once) and automatic update checker!
 
 **Also in v2.0:** Profile management, aliases, workspace profiles, session tracking, logging, backups, and much more!
 
@@ -27,7 +29,12 @@ When using Claude Code with multiple simultaneous sessions, changing the global 
 🔐 **Secure** - Credentials stored locally in `~/.claude-switcher/`
 🌍 **Cross-Platform** - Works on macOS and Linux
 
-### New in v2.1
+### New in v2.2
+📋 **Profile Templates** - Quick setup with pre-configured templates for common providers
+🏥 **Health Checks** - Test profile connectivity before launching sessions
+🔄 **Model Auto-Update** - Update profiles to latest model versions
+
+### Also in v2.1
 🎭 **Profile Groups** - Launch multiple profiles simultaneously with one command
 🔔 **Update Checker** - Automatic daily checks for new versions
 
@@ -179,6 +186,17 @@ claude-switcher alias add <alias> <prof> # Create alias
 claude-switcher alias list               # List aliases
 claude-switcher alias remove <alias>     # Remove alias
 
+# Templates (NEW in v2.2)
+claude-switcher template list                # List all templates
+claude-switcher template show <template>     # Show template details
+claude-switcher template use <template> <name>  # Create from template
+
+# Models (NEW in v2.2)
+claude-switcher models list [--provider]     # List available models
+claude-switcher models update <profile>      # Update to latest models
+claude-switcher profile test <name>          # Test profile connectivity
+claude-switcher profile test --all           # Test all profiles
+
 # Groups (NEW in v2.1)
 claude-switcher group add <name> --profiles <p1,p2,...>  # Create group
 claude-switcher group launch <name>                      # Launch group
@@ -250,6 +268,128 @@ Profiles are stored in `~/.claude-switcher/profiles.json`:
 Each session gets its own environment, so they don't interfere with each other.
 
 ## Examples
+
+### Quick Setup with Templates (NEW in v2.2)
+
+Templates make it easy to get started with popular providers:
+
+```bash
+# List available templates
+claude-switcher template list
+# Output:
+# === Available Profile Templates ===
+#
+# • anthropic
+#   Name: Anthropic Claude
+#   Description: Official Anthropic API with latest Claude models
+#   Base URL: https://api.anthropic.com
+#   Models: haiku, sonnet, opus
+#
+# • zai-glm
+#   Name: Z.AI GLM
+#   Description: Z.AI GLM models via Anthropic-compatible API
+#   Base URL: https://api.z.ai/api/anthropic
+#   Models: haiku, sonnet, opus
+#
+# • deepseek
+#   Name: DeepSeek
+#   Description: DeepSeek AI models
+#   Base URL: https://api.deepseek.com
+#   Models: sonnet
+
+# View template details
+claude-switcher template show anthropic
+
+# Create a profile from a template - only asks for API key!
+claude-switcher template use anthropic my-claude
+# Enter your API key: sk-ant-...
+# ✓ Profile 'my-claude' created successfully!
+
+# Create GLM profile just as easily
+claude-switcher template use zai-glm glm
+# Enter your API key: ...
+# ✓ Profile 'glm' created successfully!
+```
+
+### Health Checks (NEW in v2.2)
+
+Test profiles before launching to catch issues early:
+
+```bash
+# Test a single profile
+claude-switcher profile test my-claude
+# Output:
+# === Testing profile: my-claude ===
+#
+# ✓ API Key: Present (48 characters)
+# ✓ Base URL: https://api.anthropic.com
+# ✓ Models: 3 configured
+#
+# ✓ Profile configuration is valid
+
+# Test with verbose mode to check API connectivity
+claude-switcher profile test my-claude --verbose
+# Also tests actual API connection
+
+# Test all profiles at once
+claude-switcher profile test --all
+# Output:
+# === Testing 3 profile(s) ===
+#
+# [Tests each profile...]
+#
+# === Summary ===
+# Passed: 2/3
+#
+# Failed profiles:
+#   • old-profile
+```
+
+### Model Auto-Update (NEW in v2.2)
+
+Keep your profiles up-to-date with the latest models:
+
+```bash
+# List available models
+claude-switcher models list
+# Output:
+# === Available Models (anthropic) ===
+#
+#   haiku: claude-3-5-haiku-20241022
+#   sonnet: claude-sonnet-4-5-20250929
+#   opus: claude-opus-4-20250514
+
+# List models for other providers
+claude-switcher models list --provider zai
+# Output:
+# === Available Models (zai) ===
+#
+#   haiku: GLM-4.5-Air
+#   sonnet: GLM-4.6
+#   opus: GLM-4.6
+
+# Preview what would change (dry run)
+claude-switcher profile update-models my-claude --dry-run
+# Shows what models would be updated
+
+# Update profile to latest models
+claude-switcher profile update-models my-claude
+# Output:
+# === Updating models for profile: my-claude ===
+#
+# Changes made:
+#   haiku:
+#     Old: claude-3-haiku-20240307
+#     New: claude-3-5-haiku-20241022
+#   sonnet:
+#     Old: claude-3-5-sonnet-20241022
+#     New: claude-sonnet-4-5-20250929
+#
+# ✓ Profile 'my-claude' updated with latest anthropic models
+
+# Update with specific provider
+claude-switcher models update glm --provider zai
+```
 
 ### Running Multiple Sessions
 
@@ -549,6 +689,34 @@ rm -rf ~/.claude-switcher/
 ```
 
 ## Changelog
+
+### v2.2.0 (2025-11-08)
+
+**Major Features:**
+- **Profile Templates**: Quick setup with pre-configured templates
+  - Built-in templates for Anthropic, Z.AI GLM, and DeepSeek
+  - Create profiles with just an API key - no manual configuration
+  - `template list`, `template show`, and `template use` commands
+  - Reduces onboarding friction for new users
+- **Profile Health Checks**: Test profiles before launching
+  - Validate API keys, base URLs, and model configurations
+  - Optional verbose mode to test actual API connectivity
+  - Test individual profiles or all profiles at once
+  - Catch configuration issues early
+- **Model Auto-Update**: Keep profiles current with latest models
+  - List available models for different providers
+  - Update profile models to latest versions
+  - Dry-run mode to preview changes
+  - Supports Anthropic and Z.AI providers
+
+**Technical Improvements:**
+- Added TemplateManager class with built-in templates
+- Added ProfileHealthChecker class with API connectivity testing
+- Added ModelUpdater class with provider-specific model mappings
+- Enhanced profile management with test and update-models subcommands
+- Improved error handling and validation throughout
+
+**Co-authored-by:** Merryl DMello <rolan86@gmail.com>
 
 ### v2.1.1 (2025-11-10)
 
