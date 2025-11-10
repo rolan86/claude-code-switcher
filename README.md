@@ -328,6 +328,7 @@ claude-switcher group remove development
 - **Team environments**: Share group configurations across your team
 - **Development contexts**: Different groups for frontend, backend, testing, etc.
 
+
 ### Workspace-Specific Profiles
 
 ```bash
@@ -431,14 +432,13 @@ claude-switcher update check
 # ============================================================
 # 🎉 Update Available!
 # ============================================================
-# Current version: v2.0.0
-# Latest version:  v2.1.0
+# Current version: v2.1.0
+# Latest version:  v2.1.1
 #
-# Release URL: https://github.com/rolan86/claude-code-switcher/releases/tag/v2.1.0
+# Release URL: https://github.com/rolan86/claude-code-switcher/releases/tag/v2.1.1
 #
 # Release Notes:
-# - Added profile groups for launching multiple profiles at once
-# - Added automatic update checker
+# - Fixed authentication conflict bug
 # ...
 #
 # To update, run:
@@ -448,7 +448,7 @@ claude-switcher update check
 # ============================================================
 
 # If you're up to date:
-# ✓ You're running the latest version (v2.1.0)
+# ✓ You're running the latest version (v2.1.1)
 ```
 
 **How it works:**
@@ -456,6 +456,7 @@ claude-switcher update check
 - Only shows a notification if an update is available
 - Manual check with `claude-switcher update check` shows full details
 - Checks are lightweight and don't slow down the CLI
+
 
 ### Creating a Custom Profile
 
@@ -548,6 +549,13 @@ rm -rf ~/.claude-switcher/
 ```
 
 ## Changelog
+
+### v2.1.1 (2025-11-10)
+
+**Bug Fixes:**
+- Fixed authentication conflict warning when using profiles
+  - Removed `ANTHROPIC_AUTH_TOKEN` assignment (only `ANTHROPIC_API_KEY` should be set)
+  - This resolves the "Auth conflict: Both a token and an API key are set" warning
 
 ### v2.1.0 (2025-11-08)
 
