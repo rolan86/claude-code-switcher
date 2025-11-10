@@ -2,9 +2,9 @@
 
 A powerful CLI tool to manage multiple model profiles and launch isolated Claude Code sessions. Perfect for switching between Claude and GLM models without breaking active sessions.
 
-**New in v2.1:** Profile groups (launch multiple profiles at once) and update checker!
+**New in v2.1:** Profile groups (launch multiple profiles at once) and automatic update checker!
 
-**New in v2.0:** Profile management, aliases, workspace profiles, session tracking, logging, backups, and much more!
+**Also in v2.0:** Profile management, aliases, workspace profiles, session tracking, logging, backups, and much more!
 
 ## The Problem
 
@@ -28,10 +28,10 @@ When using Claude Code with multiple simultaneous sessions, changing the global 
 🌍 **Cross-Platform** - Works on macOS and Linux
 
 ### New in v2.1
-👥 **Profile Groups** - Launch multiple profiles simultaneously
-🔄 **Update Checker** - Check for new versions from GitHub
+🎭 **Profile Groups** - Launch multiple profiles simultaneously with one command
+🔔 **Update Checker** - Automatic daily checks for new versions
 
-### New in v2.0
+### Also in v2.0
 🎯 **Profile Aliases** - Create short aliases for frequently used profiles
 📁 **Workspace Profiles** - Auto-select profiles based on current directory
 👁️ **Environment Viewer** - See exactly what env vars will be set
@@ -179,13 +179,11 @@ claude-switcher alias add <alias> <prof> # Create alias
 claude-switcher alias list               # List aliases
 claude-switcher alias remove <alias>     # Remove alias
 
-# Groups
-claude-switcher group create <name> <p...> # Create group
-claude-switcher group add <group> <prof> # Add to group
-claude-switcher group remove <grp> <prf> # Remove from group
-claude-switcher group delete <name>      # Delete group
-claude-switcher group list               # List groups
-claude-switcher group start <name>       # Launch all in group
+# Groups (NEW in v2.1)
+claude-switcher group add <name> --profiles <p1,p2,...>  # Create group
+claude-switcher group launch <name>                      # Launch group
+claude-switcher group list                               # List groups
+claude-switcher group remove <name>                      # Remove group
 
 # Workspace
 claude-switcher workspace init <profile> # Set workspace default
@@ -205,8 +203,8 @@ claude-switcher logs show [limit]        # Show activity log
 claude-switcher logs stats               # Usage statistics
 claude-switcher logs clear               # Clear logs
 
-# Update
-claude-switcher update check             # Check for new version
+# Updates (NEW in v2.1)
+claude-switcher update check             # Check for new versions
 ```
 
 ### Profile Configuration
@@ -281,40 +279,55 @@ claude-switcher start g    # Launches GLM profile
 claude-switcher alias list
 ```
 
-### Using Profile Groups
+### Using Profile Groups (NEW in v2.1)
+
+Profile groups let you launch multiple profiles at once - perfect for workflows that need multiple models running simultaneously.
 
 ```bash
-# Create a group for side-by-side comparison
-claude-switcher group create comparison claude glm
+# Create a development group with multiple profiles
+claude-switcher group add development \
+  --profiles claude,glm \
+  --desc "Development environment with both models"
 
-# Launch all profiles in the group (opens multiple terminals)
-claude-switcher group start comparison
-
-# Create a work group
-claude-switcher group create work claude-work glm-work custom
-
-# Add another profile to an existing group
-claude-switcher group add work test-profile
-
-# Remove a profile from a group
-claude-switcher group remove work test-profile
+# Launch all profiles in the group at once
+claude-switcher group launch development
+# This opens separate Claude Code sessions for both Claude and GLM
 
 # List all groups
 claude-switcher group list
 # Output:
 # === Profile Groups ===
 #
-# • comparison
+# • development
+#   Description: Development environment with both models
 #   Profiles: claude, glm
-#   Created: 2025-11-07T15:30:00
-#
-# • work
-#   Profiles: claude-work, glm-work, custom
-#   Created: 2025-11-07T15:35:00
+#   Created: 2025-11-08T...
 
-# Delete a group
-claude-switcher group delete comparison
+# View active sessions
+claude-switcher session list
+# Output:
+# === Active Sessions ===
+#
+# • PID: 12345
+#   Profile: development:claude
+#   Started: 2025-11-08T10:30:00
+#   Directory: /home/user/projects/my-app
+#
+# • PID: 12346
+#   Profile: development:glm
+#   Started: 2025-11-08T10:30:01
+#   Directory: /home/user/projects/my-app
+
+# Remove a group when no longer needed
+claude-switcher group remove development
 ```
+
+**Common use cases for groups:**
+- **Multi-model testing**: Compare responses from Claude and GLM side-by-side
+- **Project workflows**: Launch all tools needed for a specific project
+- **Team environments**: Share group configurations across your team
+- **Development contexts**: Different groups for frontend, backend, testing, etc.
+
 
 ### Workspace-Specific Profiles
 
@@ -407,22 +420,43 @@ claude-switcher logs stats
 claude-switcher logs clear
 ```
 
-### Checking for Updates
+### Checking for Updates (NEW in v2.1)
+
+Claude Code Switcher automatically checks for updates once per day when you run `claude-switcher start`. You can also manually check for updates:
 
 ```bash
-# Check if a newer version is available
+# Check for new versions
 claude-switcher update check
-# Output:
-# ✓ You're using the latest version (v2.1.0)
+
+# If an update is available, you'll see:
+# ============================================================
+# 🎉 Update Available!
+# ============================================================
+# Current version: v2.1.0
+# Latest version:  v2.1.1
 #
-# Or if an update is available:
-# 🎉 New version available!
-#    Current: v2.1.0
-#    Latest:  v2.2.0
+# Release URL: https://github.com/rolan86/claude-code-switcher/releases/tag/v2.1.1
 #
-#    Release notes: https://github.com/rolan86/claude-code-switcher/releases/latest
-#    Update: git pull origin main && ./install.sh
+# Release Notes:
+# - Fixed authentication conflict bug
+# ...
+#
+# To update, run:
+#   cd ~/claude-code-switcher
+#   git pull origin main
+#   ./install.sh
+# ============================================================
+
+# If you're up to date:
+# ✓ You're running the latest version (v2.1.1)
 ```
+
+**How it works:**
+- Automatic check runs once per day when you use `claude-switcher start`
+- Only shows a notification if an update is available
+- Manual check with `claude-switcher update check` shows full details
+- Checks are lightweight and don't slow down the CLI
+
 
 ### Creating a Custom Profile
 
@@ -490,12 +524,13 @@ Claude Code Switcher stores all its data in `~/.claude-switcher/`:
 ~/.claude-switcher/
 ├── profiles.json      # Your profile configurations
 ├── aliases.json       # Profile aliases
-├── groups.json        # Profile groups
+├── groups.json        # Profile groups (NEW in v2.1)
 ├── sessions.json      # Active session tracking
 ├── logs/              # Activity logs
 │   └── activity_YYYYMM.log
-└── backups/           # Configuration backups
-    └── backup_YYYYMMDD_HHMMSS.json
+├── backups/           # Configuration backups
+│   └── backup_YYYYMMDD_HHMMSS.json
+└── .last_update_check # Last update check timestamp (NEW in v2.1)
 ```
 
 Additionally, workspace-specific configurations are stored in `.claude-switcher.json` in each project directory.
@@ -515,21 +550,32 @@ rm -rf ~/.claude-switcher/
 
 ## Changelog
 
-### v2.1.0 (2025-11-07)
+### v2.1.1 (2025-11-10)
 
-**New Features:**
-- Profile Groups: Create groups of profiles and launch them simultaneously
-  - `group create` - Create a new group
-  - `group add/remove` - Manage profiles in groups
-  - `group start` - Launch all profiles in a group
-  - `group list` - View all configured groups
-- Update Checker: Check for new versions from GitHub
-  - `update check` - Check if a newer version is available
+**Bug Fixes:**
+- Fixed authentication conflict warning when using profiles
+  - Removed `ANTHROPIC_AUTH_TOKEN` assignment (only `ANTHROPIC_API_KEY` should be set)
+  - This resolves the "Auth conflict: Both a token and an API key are set" warning
 
-**Improvements:**
-- Enhanced help documentation with group commands
-- Better terminal detection for launching multiple sessions
-- Version bumped to 2.1.0
+### v2.1.0 (2025-11-08)
+
+**Major Features:**
+- **Profile Groups**: Launch multiple profiles simultaneously with one command
+  - Create groups with `group add <name> --profiles <p1,p2,...>`
+  - Launch all profiles in a group with `group launch <name>`
+  - Track group sessions separately
+  - Perfect for multi-model testing and workflows
+- **Update Checker**: Automatic version checking
+  - Checks for updates once per day on `start` command
+  - Manual check with `update check` command
+  - Shows release notes and update instructions
+  - Non-intrusive notifications
+
+**Technical Improvements:**
+- Added GroupManager class for group operations
+- Added UpdateChecker class with GitHub API integration
+- Enhanced session tracking to support group launches
+- Improved logging with group session events
 
 ### v2.0.0 (2025-11-07)
 

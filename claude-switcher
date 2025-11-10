@@ -433,6 +433,167 @@ class AliasManager:
         return data['aliases'].get(name, name)
 
 
+class GroupManager:
+    """Manage profile groups for launching multiple profiles at once"""
+
+    def __init__(self):
+        self.groups_file = GROUPS_FILE
+        self._ensure_groups_exists()
+
+    def _ensure_groups_exists(self):
+        if not self.groups_file.exists():
+            with open(self.groups_file, 'w') as f:
+                json.dump({"groups": {}}, f)
+
+    def _load_groups(self) -> Dict[str, Any]:
+        with open(self.groups_file, 'r') as f:
+            return json.load(f)
+
+    def _save_groups(self, data: Dict[str, Any]):
+        with open(self.groups_file, 'w') as f:
+            json.dump(data, f, indent=2)
+
+    def add_group(self, name: str, profiles: List[str], description: str = ""):
+        """Add a new profile group"""
+        # Verify all profiles exist
+        pm = ProfileManager()
+        config = pm._load_config()
+        for profile in profiles:
+            if profile not in config['profiles']:
+                print(f"Error: Profile '{profile}' not found")
+                print(f"Available profiles: {', '.join(config['profiles'].keys())}")
+                sys.exit(1)
+
+        data = self._load_groups()
+
+        if name in data['groups']:
+            response = input(f"Group '{name}' already exists. Overwrite? (y/n): ")
+            if response.lower() != 'y':
+                print("Aborted.")
+                return
+
+        data['groups'][name] = {
+            "profiles": profiles,
+            "description": description,
+            "created_at": datetime.now().isoformat()
+        }
+
+        self._save_groups(data)
+        print(f"✓ Group '{name}' created with {len(profiles)} profile(s)")
+
+    def remove_group(self, name: str):
+        """Remove a profile group"""
+        data = self._load_groups()
+        if name in data['groups']:
+            del data['groups'][name]
+            self._save_groups(data)
+            print(f"✓ Group '{name}' removed")
+        else:
+            print(f"Error: Group '{name}' not found")
+            sys.exit(1)
+
+    def list_groups(self):
+        """List all profile groups"""
+        data = self._load_groups()
+        if not data['groups']:
+            print("No groups configured")
+            print("Use 'claude-switcher group add <name> --profiles <profile1,profile2,...>' to create one")
+            return
+
+        print("\n=== Profile Groups ===\n")
+        for name, group in data['groups'].items():
+            print(f"• {name}")
+            if group.get('description'):
+                print(f"  Description: {group['description']}")
+            print(f"  Profiles: {', '.join(group['profiles'])}")
+            print(f"  Created: {group.get('created_at', 'N/A')}")
+            print()
+
+    def get_group(self, name: str) -> Dict[str, Any]:
+        """Get a group by name"""
+        data = self._load_groups()
+        if name not in data['groups']:
+            print(f"Error: Group '{name}' not found")
+            print(f"Available groups: {', '.join(data['groups'].keys())}")
+            sys.exit(1)
+        return data['groups'][name]
+
+    def launch_group(self, name: str, extra_args: list = None):
+        """Launch all profiles in a group"""
+        group = self.get_group(name)
+        profiles = group['profiles']
+
+        if not profiles:
+            print(f"Error: Group '{name}' has no profiles")
+            sys.exit(1)
+
+        print(f"\n🚀 Launching group '{name}' with {len(profiles)} profile(s)...\n")
+
+        manager = ProfileManager()
+        session_mgr = SessionManager()
+        launched_pids = []
+
+        for profile_name in profiles:
+            profile = manager.get_profile(profile_name)
+
+            # Build environment
+            env = os.environ.copy()
+
+            # Set API credentials
+            if 'api_key' in profile:
+                env['ANTHROPIC_API_KEY'] = profile['api_key']
+                env['ANTHROPIC_AUTH_TOKEN'] = profile['api_key']
+
+            # Set base URL
+            if 'base_url' in profile and profile['base_url']:
+                env['ANTHROPIC_BASE_URL'] = profile['base_url']
+
+            # Set model mappings
+            if 'models' in profile:
+                models = profile['models']
+                if 'haiku' in models:
+                    env['ANTHROPIC_DEFAULT_HAIKU_MODEL'] = models['haiku']
+                if 'sonnet' in models:
+                    env['ANTHROPIC_DEFAULT_SONNET_MODEL'] = models['sonnet']
+                if 'opus' in models:
+                    env['ANTHROPIC_DEFAULT_OPUS_MODEL'] = models['opus']
+
+            # Build command
+            cmd = ['claude']
+            if extra_args:
+                cmd.extend(extra_args)
+
+            print(f"  ✓ Launching {profile_name}...")
+            Logger.log('group_session_start', profile_name, {'group': name, 'cwd': os.getcwd()})
+
+            try:
+                # Launch in background
+                proc = subprocess.Popen(
+                    cmd,
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True  # Detach from parent
+                )
+
+                # Track session
+                session_mgr.add_session(proc.pid, f"{name}:{profile_name}")
+                launched_pids.append((profile_name, proc.pid))
+
+            except FileNotFoundError:
+                print(f"  ✗ Error: 'claude' command not found. Is Claude Code installed?")
+                sys.exit(1)
+            except Exception as e:
+                print(f"  ✗ Error launching {profile_name}: {e}")
+
+        print(f"\n✓ Group '{name}' launched successfully!\n")
+        print("Active sessions:")
+        for profile_name, pid in launched_pids:
+            print(f"  • {profile_name}: PID {pid}")
+        print(f"\nUse 'claude-switcher session list' to view all sessions")
+        print(f"Use 'claude-switcher session kill <pid>' to stop a session")
+
+
 class SessionManager:
     """Manage active Claude Code sessions"""
 
@@ -654,195 +815,101 @@ class Logger:
         print()
 
 
-class GroupManager:
-    """Manage profile groups"""
+class UpdateChecker:
+    """Check for new versions of claude-switcher"""
 
-    def __init__(self):
-        self.groups_file = GROUPS_FILE
-        self._ensure_groups_exists()
+    @staticmethod
+    def check_for_updates(silent: bool = False) -> Optional[str]:
+        """
+        Check GitHub for the latest release
+        Returns the latest version if an update is available, None otherwise
+        """
+        try:
+            import urllib.request
+            import ssl
 
-    def _ensure_groups_exists(self):
-        CONFIG_DIR.mkdir(exist_ok=True)
-        if not self.groups_file.exists():
-            with open(self.groups_file, 'w') as f:
-                json.dump({"groups": {}}, f)
+            # Create SSL context
+            context = ssl.create_default_context()
 
-    def _load_groups(self) -> Dict[str, Any]:
-        with open(self.groups_file, 'r') as f:
-            return json.load(f)
+            # Fetch latest release from GitHub API
+            url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+            req = urllib.request.Request(url)
+            req.add_header('Accept', 'application/vnd.github.v3+json')
 
-    def _save_groups(self, data: Dict[str, Any]):
-        with open(self.groups_file, 'w') as f:
-            json.dump(data, f, indent=2)
+            with urllib.request.urlopen(req, context=context, timeout=5) as response:
+                data = json.loads(response.read().decode())
+                latest_version = data.get('tag_name', '').lstrip('v')
+                release_url = data.get('html_url', '')
+                release_notes = data.get('body', '')
 
-    def create_group(self, name: str, profiles: List[str]):
-        """Create a new profile group"""
-        # Verify all profiles exist
-        pm = ProfileManager()
-        for profile in profiles:
-            pm.get_profile(profile)  # Will exit if profile doesn't exist
+                if not latest_version:
+                    if not silent:
+                        print("Could not determine latest version")
+                    return None
 
-        data = self._load_groups()
+                # Compare versions
+                current = tuple(map(int, VERSION.split('.')))
+                latest = tuple(map(int, latest_version.split('.')))
 
-        if name in data['groups']:
-            response = input(f"Group '{name}' already exists. Overwrite? (y/n): ")
-            if response.lower() != 'y':
-                print("Aborted.")
-                return
-
-        data['groups'][name] = {
-            "profiles": profiles,
-            "created_at": datetime.now().isoformat()
-        }
-        self._save_groups(data)
-        print(f"✓ Group '{name}' created with profiles: {', '.join(profiles)}")
-
-    def add_to_group(self, group_name: str, profile: str):
-        """Add a profile to an existing group"""
-        # Verify profile exists
-        pm = ProfileManager()
-        pm.get_profile(profile)
-
-        data = self._load_groups()
-
-        if group_name not in data['groups']:
-            print(f"Error: Group '{group_name}' not found")
-            sys.exit(1)
-
-        if profile in data['groups'][group_name]['profiles']:
-            print(f"Profile '{profile}' is already in group '{group_name}'")
-            return
-
-        data['groups'][group_name]['profiles'].append(profile)
-        self._save_groups(data)
-        print(f"✓ Added '{profile}' to group '{group_name}'")
-
-    def remove_from_group(self, group_name: str, profile: str):
-        """Remove a profile from a group"""
-        data = self._load_groups()
-
-        if group_name not in data['groups']:
-            print(f"Error: Group '{group_name}' not found")
-            sys.exit(1)
-
-        if profile not in data['groups'][group_name]['profiles']:
-            print(f"Profile '{profile}' is not in group '{group_name}'")
-            return
-
-        data['groups'][group_name]['profiles'].remove(profile)
-        self._save_groups(data)
-        print(f"✓ Removed '{profile}' from group '{group_name}'")
-
-    def delete_group(self, name: str):
-        """Delete a group"""
-        data = self._load_groups()
-
-        if name not in data['groups']:
-            print(f"Error: Group '{name}' not found")
-            sys.exit(1)
-
-        del data['groups'][name]
-        self._save_groups(data)
-        print(f"✓ Group '{name}' deleted")
-
-    def list_groups(self):
-        """List all groups"""
-        data = self._load_groups()
-
-        if not data['groups']:
-            print("No groups configured")
-            return
-
-        print("\n=== Profile Groups ===\n")
-        for name, group_data in data['groups'].items():
-            profiles = group_data.get('profiles', [])
-            created = group_data.get('created_at', 'Unknown')
-            print(f"• {name}")
-            print(f"  Profiles: {', '.join(profiles)}")
-            print(f"  Created: {created}")
-            print()
-
-    def start_group(self, name: str):
-        """Launch all profiles in a group"""
-        data = self._load_groups()
-
-        if name not in data['groups']:
-            print(f"Error: Group '{name}' not found")
-            sys.exit(1)
-
-        profiles = data['groups'][name]['profiles']
-
-        if not profiles:
-            print(f"Group '{name}' has no profiles")
-            return
-
-        print(f"🚀 Launching group '{name}' with {len(profiles)} profile(s)...\n")
-
-        pids = []
-        for profile in profiles:
-            try:
-                # Launch each profile in the background
-                cmd = ['claude-switcher', 'start', profile]
-
-                # Try to launch in a new terminal window
-                if shutil.which('gnome-terminal'):
-                    # Linux with GNOME
-                    proc = subprocess.Popen(['gnome-terminal', '--', *cmd])
-                elif shutil.which('xterm'):
-                    # Linux with xterm
-                    proc = subprocess.Popen(['xterm', '-e', *cmd])
-                elif shutil.which('osascript'):
-                    # macOS
-                    script = f'tell application "Terminal" to do script "{" ".join(cmd)}"'
-                    proc = subprocess.Popen(['osascript', '-e', script])
+                if latest > current:
+                    if not silent:
+                        print(f"\n{'='*60}")
+                        print(f"🎉 Update Available!")
+                        print(f"{'='*60}")
+                        print(f"Current version: v{VERSION}")
+                        print(f"Latest version:  v{latest_version}")
+                        print(f"\nRelease URL: {release_url}")
+                        if release_notes:
+                            print(f"\nRelease Notes:\n{release_notes[:500]}...")
+                        print(f"\nTo update, run:")
+                        print(f"  cd {Path(__file__).parent if Path(__file__).parent.exists() else '~/claude-code-switcher'}")
+                        print(f"  git pull origin main")
+                        print(f"  ./install.sh")
+                        print(f"{'='*60}\n")
+                    return latest_version
                 else:
-                    # Fallback: background process
-                    print(f"  ⚠ No terminal emulator found, launching {profile} in background...")
-                    proc = subprocess.Popen(cmd)
+                    if not silent:
+                        print(f"✓ You're running the latest version (v{VERSION})")
+                    return None
 
-                pids.append((profile, proc.pid))
-                print(f"  ✓ Launched {profile} (PID: {proc.pid})")
-                time.sleep(0.5)  # Small delay between launches
+        except urllib.error.URLError as e:
+            if not silent:
+                print(f"Could not check for updates: Network error ({e.reason})")
+            return None
+        except Exception as e:
+            if not silent:
+                print(f"Could not check for updates: {e}")
+            return None
 
-            except Exception as e:
-                print(f"  ✗ Failed to launch {profile}: {e}")
+    @staticmethod
+    def auto_check():
+        """
+        Perform automatic update check (silent if up-to-date)
+        Only runs once per day
+        """
+        last_check_file = CONFIG_DIR / ".last_update_check"
 
-        print(f"\n✓ Group '{name}' launched successfully!")
-        print(f"  Use 'claude-switcher session list' to see active sessions")
+        # Check if we've already checked today
+        if last_check_file.exists():
+            try:
+                with open(last_check_file, 'r') as f:
+                    last_check = datetime.fromisoformat(f.read().strip())
+                    if (datetime.now() - last_check).days < 1:
+                        return  # Don't check more than once per day
+            except Exception:
+                pass
 
+        # Check for updates silently
+        new_version = UpdateChecker.check_for_updates(silent=True)
 
-def check_for_updates():
-    """Check if a newer version is available on GitHub"""
-    try:
-        import urllib.request
+        # Update last check time
+        with open(last_check_file, 'w') as f:
+            f.write(datetime.now().isoformat())
 
-        # Fetch latest release info from GitHub API
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-        req = urllib.request.Request(url)
-        req.add_header('User-Agent', f'claude-switcher/{VERSION}')
-
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode())
-            latest_version = data.get('tag_name', '').lstrip('v')
-
-            if not latest_version:
-                print("Could not determine latest version")
-                return
-
-            current_parts = [int(x) for x in VERSION.split('.')]
-            latest_parts = [int(x) for x in latest_version.split('.')]
-
-            if latest_parts > current_parts:
-                print(f"\n🎉 New version available!")
-                print(f"   Current: v{VERSION}")
-                print(f"   Latest:  v{latest_version}\n")
-                print(f"   Release notes: {data.get('html_url', '')}")
-                print(f"   Update: git pull origin main && ./install.sh\n")
-            else:
-                print(f"✓ You're using the latest version (v{VERSION})")
-
-    except Exception as e:
-        print(f"Could not check for updates: {e}")
+        # Show notification if update available
+        if new_version:
+            print(f"💡 Update available: v{VERSION} → v{new_version}")
+            print(f"   Run 'claude-switcher update check' for details\n")
 
 
 def launch_session(profile_name: Optional[str] = None, extra_args: list = None):
@@ -937,7 +1004,7 @@ USAGE:
     claude-switcher workspace <command> [args]    Manage workspace profiles
     claude-switcher backup <command> [args]       Backup and restore configuration
     claude-switcher logs <command> [args]         View logs and statistics
-    claude-switcher update check                  Check for updates
+    claude-switcher update <command>              Check for updates
     claude-switcher version                       Show version
     claude-switcher help                          Show this help
 
@@ -958,12 +1025,10 @@ ALIAS COMMANDS:
     list                    List all aliases
 
 GROUP COMMANDS:
-    create <name> <prof...> Create a group with profiles
-    add <group> <profile>   Add profile to group
-    remove <group> <prof>   Remove profile from group
-    delete <name>           Delete a group
-    list                    List all groups
-    start <name>            Launch all profiles in group
+    add <name> --profiles <p1,p2,...> [--desc "..."]    Create a profile group
+    remove <name>                                       Remove a group
+    list                                                List all groups
+    launch <name>                                       Launch all profiles in a group
 
 SESSION COMMANDS:
     list                    List active sessions
@@ -983,6 +1048,9 @@ LOG COMMANDS:
     clear                   Clear all logs
     stats                   Show usage statistics
 
+UPDATE COMMANDS:
+    check                   Check for new versions
+
 EXAMPLES:
     # Basic usage
     claude-switcher profile add claude
@@ -992,9 +1060,9 @@ EXAMPLES:
     claude-switcher alias add c claude
     claude-switcher start c
 
-    # Using groups to launch multiple profiles
-    claude-switcher group create comparison claude glm
-    claude-switcher group start comparison  # Launches both profiles
+    # Using profile groups (NEW in v2.1)
+    claude-switcher group add dev --profiles claude,glm --desc "Development profiles"
+    claude-switcher group launch dev  # Launches both Claude and GLM sessions
 
     # Workspace-specific profiles
     cd ~/my-project
@@ -1019,7 +1087,7 @@ EXAMPLES:
     claude-switcher logs show 100
     claude-switcher logs stats
 
-    # Check for updates
+    # Check for updates (NEW in v2.1)
     claude-switcher update check
 
 DATA LOCATIONS:
@@ -1047,6 +1115,9 @@ def main():
         print(f"Claude Code Switcher v{VERSION}")
 
     elif command == 'start':
+        # Check for updates automatically (once per day)
+        UpdateChecker.auto_check()
+
         profile = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith('-') else None
         extra_args = sys.argv[3:] if profile else sys.argv[2:]
         launch_session(profile, extra_args)
@@ -1156,51 +1227,65 @@ def main():
     elif command == 'group':
         if len(sys.argv) < 3:
             print("Error: Missing group subcommand")
-            print("Use: claude-switcher group [create|add|remove|delete|list|start]")
+            print("Use: claude-switcher group [add|remove|list|launch]")
             sys.exit(1)
 
         subcommand = sys.argv[2]
         group_mgr = GroupManager()
 
-        if subcommand == 'create':
-            if len(sys.argv) < 5:
-                print("Error: Missing group name and/or profiles")
-                print("Use: claude-switcher group create <name> <profile1> [profile2 ...]")
-                sys.exit(1)
-            group_name = sys.argv[3]
-            profiles = sys.argv[4:]
-            group_mgr.create_group(group_name, profiles)
-
-        elif subcommand == 'add':
-            if len(sys.argv) < 5:
-                print("Error: Missing group name and/or profile")
-                print("Use: claude-switcher group add <group> <profile>")
-                sys.exit(1)
-            group_mgr.add_to_group(sys.argv[3], sys.argv[4])
-
-        elif subcommand == 'remove':
-            if len(sys.argv) < 5:
-                print("Error: Missing group name and/or profile")
-                print("Use: claude-switcher group remove <group> <profile>")
-                sys.exit(1)
-            group_mgr.remove_from_group(sys.argv[3], sys.argv[4])
-
-        elif subcommand == 'delete':
+        if subcommand == 'add':
             if len(sys.argv) < 4:
                 print("Error: Missing group name")
-                print("Use: claude-switcher group delete <name>")
+                print("Use: claude-switcher group add <name> --profiles <profile1,profile2,...> [--desc \"description\"]")
                 sys.exit(1)
-            group_mgr.delete_group(sys.argv[3])
+
+            name = sys.argv[3]
+            profiles = []
+            description = ""
+
+            # Parse arguments
+            i = 4
+            while i < len(sys.argv):
+                if sys.argv[i] == '--profiles':
+                    if i + 1 >= len(sys.argv):
+                        print("Error: --profiles requires a value")
+                        sys.exit(1)
+                    profiles = sys.argv[i + 1].split(',')
+                    i += 2
+                elif sys.argv[i] == '--desc':
+                    if i + 1 >= len(sys.argv):
+                        print("Error: --desc requires a value")
+                        sys.exit(1)
+                    description = sys.argv[i + 1]
+                    i += 2
+                else:
+                    print(f"Error: Unknown option: {sys.argv[i]}")
+                    sys.exit(1)
+
+            if not profiles:
+                print("Error: --profiles is required")
+                print("Use: claude-switcher group add <name> --profiles <profile1,profile2,...>")
+                sys.exit(1)
+
+            group_mgr.add_group(name, profiles, description)
+
+        elif subcommand == 'remove':
+            if len(sys.argv) < 4:
+                print("Error: Missing group name")
+                print("Use: claude-switcher group remove <name>")
+                sys.exit(1)
+            group_mgr.remove_group(sys.argv[3])
 
         elif subcommand == 'list':
             group_mgr.list_groups()
 
-        elif subcommand == 'start':
+        elif subcommand == 'launch':
             if len(sys.argv) < 4:
                 print("Error: Missing group name")
-                print("Use: claude-switcher group start <name>")
+                print("Use: claude-switcher group launch <name>")
                 sys.exit(1)
-            group_mgr.start_group(sys.argv[3])
+            extra_args = sys.argv[4:] if len(sys.argv) > 4 else None
+            group_mgr.launch_group(sys.argv[3], extra_args)
 
         else:
             print(f"Error: Unknown group subcommand: {subcommand}")
@@ -1307,16 +1392,16 @@ def main():
     elif command == 'update':
         if len(sys.argv) < 3:
             print("Error: Missing update subcommand")
-            print("Use: claude-switcher update check")
+            print("Use: claude-switcher update [check]")
             sys.exit(1)
 
         subcommand = sys.argv[2]
 
         if subcommand == 'check':
-            check_for_updates()
+            UpdateChecker.check_for_updates(silent=False)
+
         else:
             print(f"Error: Unknown update subcommand: {subcommand}")
-            print("Use: claude-switcher update check")
             sys.exit(1)
 
     else:
