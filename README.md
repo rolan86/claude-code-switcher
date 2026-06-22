@@ -776,3 +776,7 @@ rm -rf ~/.claude-switcher/
 - [Claude Code Documentation](https://docs.claude.com/claude-code)
 - [Z.AI GLM Integration Guide](https://docs.z.ai)
 - [Anthropic API Reference](https://docs.anthropic.com)
+
+## Author
+
+Built by [Merryl D'Mello](https://reposition.dev). I build developer tooling for Claude Code and write about practical AI workflows at [REPOSITION](https://reposition.dev).
