@@ -27,6 +27,57 @@ LOGS_DIR = CONFIG_DIR / "logs"
 BACKUPS_DIR = CONFIG_DIR / "backups"
 WORKSPACE_FILE = ".claude-switcher.json"
 
+
+def apply_profile_env(env: Dict[str, str], profile: Dict[str, Any]) -> Dict[str, str]:
+    """Apply a profile's credentials, base URL and model mappings to an env dict.
+
+    Auth rules:
+      * base_url set (third-party Anthropic-compatible gateway, e.g. Z.AI):
+        authenticate with ANTHROPIC_AUTH_TOKEN (sent as an `Authorization: Bearer`
+        header). Claude Code does NOT gate ANTHROPIC_AUTH_TOKEN behind the
+        interactive "Detected a custom API key" approval prompt, so the key is
+        never dropped/"rejected" the way ANTHROPIC_API_KEY can be. ANTHROPIC_API_KEY
+        is unset so the two never conflict ("Both a token and an API key are set").
+      * no base_url (official Anthropic endpoint): use ANTHROPIC_API_KEY, and unset
+        ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL so nothing stale leaks in from the
+        parent shell. An empty api_key falls back to claude.ai login.
+
+    A profile may force a mechanism with "auth_method": "api_key" | "auth_token".
+    """
+    api_key = profile.get('api_key') or ''
+    base_url = profile.get('base_url') or ''
+    auth_method = profile.get('auth_method')
+    if not auth_method:
+        auth_method = 'auth_token' if base_url else 'api_key'
+
+    # Base URL: set it when present, otherwise clear any inherited value.
+    if base_url:
+        env['ANTHROPIC_BASE_URL'] = base_url
+    else:
+        env.pop('ANTHROPIC_BASE_URL', None)
+
+    # Credentials — only ever set ONE of the two auth vars, never both.
+    env.pop('ANTHROPIC_API_KEY', None)
+    env.pop('ANTHROPIC_AUTH_TOKEN', None)
+    if api_key:
+        if auth_method == 'auth_token':
+            env['ANTHROPIC_AUTH_TOKEN'] = api_key
+        else:
+            env['ANTHROPIC_API_KEY'] = api_key
+    # else: leave both unset -> use claude.ai authentication
+
+    # Model tier mappings (remap the Opus/Sonnet/Haiku picker to provider models).
+    models = profile.get('models') or {}
+    if 'haiku' in models:
+        env['ANTHROPIC_DEFAULT_HAIKU_MODEL'] = models['haiku']
+    if 'sonnet' in models:
+        env['ANTHROPIC_DEFAULT_SONNET_MODEL'] = models['sonnet']
+    if 'opus' in models:
+        env['ANTHROPIC_DEFAULT_OPUS_MODEL'] = models['opus']
+
+    return env
+
+
 class ProfileManager:
     def __init__(self):
         self.config_dir = CONFIG_DIR
@@ -287,13 +338,17 @@ class ProfileManager:
         profile = config['profiles'][name]
         print(f"\n=== Environment variables for profile: {name} ===\n")
 
-        if 'api_key' in profile:
-            key = profile['api_key']
-            masked = key[:8] + '...' + key[-4:] if len(key) > 12 else '***'
-            print(f"ANTHROPIC_API_KEY={masked}")
+        base_url = profile.get('base_url') or ''
+        api_key = profile.get('api_key') or ''
+        auth_method = profile.get('auth_method') or ('auth_token' if base_url else 'api_key')
 
-        if 'base_url' in profile and profile['base_url']:
-            print(f"ANTHROPIC_BASE_URL={profile['base_url']}")
+        if api_key:
+            masked = api_key[:8] + '...' + api_key[-4:] if len(api_key) > 12 else '***'
+            var = 'ANTHROPIC_AUTH_TOKEN' if auth_method == 'auth_token' else 'ANTHROPIC_API_KEY'
+            print(f"{var}={masked}")
+
+        if base_url:
+            print(f"ANTHROPIC_BASE_URL={base_url}")
 
         if 'models' in profile:
             models = profile['models']
@@ -537,29 +592,7 @@ class GroupManager:
             profile = manager.get_profile(profile_name)
 
             # Build environment
-            env = os.environ.copy()
-
-            # Set or unset API credentials based on profile
-            if 'api_key' in profile and profile['api_key']:
-                env['ANTHROPIC_API_KEY'] = profile['api_key']
-            else:
-                # Explicitly unset API key to use claude.ai authentication
-                # This prevents conflicts when using profiles without API keys
-                env.pop('ANTHROPIC_API_KEY', None)
-
-            # Set base URL
-            if 'base_url' in profile and profile['base_url']:
-                env['ANTHROPIC_BASE_URL'] = profile['base_url']
-
-            # Set model mappings
-            if 'models' in profile:
-                models = profile['models']
-                if 'haiku' in models:
-                    env['ANTHROPIC_DEFAULT_HAIKU_MODEL'] = models['haiku']
-                if 'sonnet' in models:
-                    env['ANTHROPIC_DEFAULT_SONNET_MODEL'] = models['sonnet']
-                if 'opus' in models:
-                    env['ANTHROPIC_DEFAULT_OPUS_MODEL'] = models['opus']
+            env = apply_profile_env(os.environ.copy(), profile)
 
             # Build command
             cmd = ['claude']
@@ -927,8 +960,8 @@ class ModelUpdater:
         },
         'zai': {
             'haiku': 'GLM-4.5-Air',
-            'sonnet': 'GLM-4.6',
-            'opus': 'GLM-4.6'
+            'sonnet': 'GLM-4.7',
+            'opus': 'GLM-5.2'
         }
     }
 
@@ -1252,29 +1285,7 @@ def launch_session(profile_name: Optional[str] = None, extra_args: list = None):
     profile = manager.get_profile(profile_name)
 
     # Build environment
-    env = os.environ.copy()
-
-    # Set or unset API credentials based on profile
-    if 'api_key' in profile and profile['api_key']:
-        env['ANTHROPIC_API_KEY'] = profile['api_key']
-    else:
-        # Explicitly unset API key to use claude.ai authentication
-        # This prevents conflicts when using profiles without API keys
-        env.pop('ANTHROPIC_API_KEY', None)
-
-    # Set base URL
-    if 'base_url' in profile and profile['base_url']:
-        env['ANTHROPIC_BASE_URL'] = profile['base_url']
-
-    # Set model mappings
-    if 'models' in profile:
-        models = profile['models']
-        if 'haiku' in models:
-            env['ANTHROPIC_DEFAULT_HAIKU_MODEL'] = models['haiku']
-        if 'sonnet' in models:
-            env['ANTHROPIC_DEFAULT_SONNET_MODEL'] = models['sonnet']
-        if 'opus' in models:
-            env['ANTHROPIC_DEFAULT_OPUS_MODEL'] = models['opus']
+    env = apply_profile_env(os.environ.copy(), profile)
 
     # Build command
     cmd = ['claude']
