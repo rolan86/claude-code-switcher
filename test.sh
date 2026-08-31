@@ -28,16 +28,16 @@ cat > ~/.claude-switcher/profiles.json <<'EOF'
       "api_key": "sk-ant-test-key-xxxxx",
       "base_url": "https://api.anthropic.com",
       "models": {
-        "haiku": "claude-3-5-haiku-20241022",
-        "sonnet": "claude-sonnet-4-5-20250929"
+        "haiku": "claude-haiku-4-5",
+        "sonnet": "claude-sonnet-5"
       }
     },
     "glm": {
       "api_key": "test-glm-key-xxxxx",
       "base_url": "https://api.z.ai/api/anthropic",
       "models": {
-        "haiku": "GLM-4.5-Air",
-        "sonnet": "GLM-4.6"
+        "haiku": "glm-5.3-flash",
+        "sonnet": "glm-5.3"
       }
     }
   },

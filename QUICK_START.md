@@ -27,8 +27,8 @@ claude-switcher profile add claude
 claude-switcher profile add glm
 # API Key: your-zai-key
 # Base URL: https://api.z.ai/api/anthropic
-# Sonnet model: GLM-4.6
-# Haiku model: GLM-4.5-Air
+# Sonnet model: glm-5.3
+# Haiku model: glm-5.3-flash
 ```
 
 ### 3. Launch Sessions
@@ -82,8 +82,8 @@ claude-switcher help
 
 ```bash
 # Create a group to launch multiple profiles at once
-claude-switcher group create comparison claude glm
-claude-switcher group start comparison  # Opens both!
+claude-switcher group add comparison --profiles claude,glm
+claude-switcher group launch comparison  # Opens both!
 
 # Check for updates
 claude-switcher update check

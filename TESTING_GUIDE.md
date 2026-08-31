@@ -27,8 +27,8 @@ claude-switcher profile add claude
 # When prompted:
 # - API Key: [Enter your Anthropic API key, or press Enter to skip]
 # - Base URL: [Just press Enter for default]
-# - Haiku model: [Press Enter to skip or enter: claude-3-5-haiku-20241022]
-# - Sonnet model: [Press Enter to skip or enter: claude-sonnet-4-5-20250929]
+# - Haiku model: [Press Enter to skip or enter: claude-haiku-4-5]
+# - Sonnet model: [Press Enter to skip or enter: claude-sonnet-5]
 # - Opus model: [Press Enter to skip]
 ```
 
@@ -41,9 +41,9 @@ claude-switcher profile add glm
 # When prompted:
 # - API Key: [Enter your Z.AI API key]
 # - Base URL: https://api.z.ai/api/anthropic
-# - Haiku model: GLM-4.5-Air
-# - Sonnet model: GLM-4.6
-# - Opus model: GLM-4.6
+# - Haiku model: glm-5.3-flash
+# - Sonnet model: glm-5.3
+# - Opus model: glm-5.3
 ```
 
 #### Test 3: Verify Profiles

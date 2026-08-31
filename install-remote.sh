@@ -6,7 +6,7 @@ set -e
 
 INSTALL_DIR="/usr/local/bin"
 SCRIPT_NAME="claude-switcher"
-REPO_URL="https://raw.githubusercontent.com/rolan86/claude-code-switcher/claude/switch-glm-model-011CUtcp2SMC3AWFwoCKMm7t"
+REPO_URL="https://raw.githubusercontent.com/rolan86/claude-code-switcher/main"
 
 echo "=== Claude Code Switcher - Remote Installation ==="
 echo

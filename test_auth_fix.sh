@@ -15,9 +15,9 @@ cat > /tmp/test-no-api.json << 'EOF'
 {
   "base_url": "",
   "models": {
-    "haiku": "claude-haiku-4-20250514",
-    "sonnet": "claude-sonnet-4-5-20250929",
-    "opus": "claude-opus-4-20250514"
+    "haiku": "claude-haiku-4-5",
+    "sonnet": "claude-sonnet-5",
+    "opus": "claude-opus-5"
   }
 }
 EOF
@@ -32,11 +32,11 @@ echo "3. Testing profile WITH API key (GLM profile):"
 cat > /tmp/test-with-api.json << 'EOF'
 {
   "api_key": "glm-api-key-123",
-  "base_url": "https://open.bigmodel.cn/api/paas/v4",
+  "base_url": "https://api.z.ai/api/anthropic",
   "models": {
-    "haiku": "glm-4-flash",
-    "sonnet": "glm-4-plus",
-    "opus": "glm-4-plus"
+    "haiku": "glm-5.3-flash",
+    "sonnet": "glm-5.3",
+    "opus": "glm-5.3"
   }
 }
 EOF

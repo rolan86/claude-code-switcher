@@ -131,8 +131,8 @@ claude-switcher profile add claude
 claude-switcher profile add glm
 # Enter your Z.AI API key
 # Base URL: https://api.z.ai/api/anthropic
-# Sonnet model: GLM-4.6
-# Haiku model: GLM-4.5-Air
+# Sonnet model: glm-5.3
+# Haiku model: glm-5.3-flash
 ```
 
 ### 2. Launch Sessions
@@ -236,18 +236,18 @@ Profiles are stored in `~/.claude-switcher/profiles.json`:
       "api_key": "sk-ant-xxx",
       "base_url": "https://api.anthropic.com",
       "models": {
-        "haiku": "claude-3-5-haiku-20241022",
-        "sonnet": "claude-sonnet-4-5-20250929",
-        "opus": "claude-opus-4-20250514"
+        "haiku": "claude-haiku-4-5",
+        "sonnet": "claude-sonnet-5",
+        "opus": "claude-opus-5"
       }
     },
     "glm": {
       "api_key": "xxx",
       "base_url": "https://api.z.ai/api/anthropic",
       "models": {
-        "haiku": "GLM-4.5-Air",
-        "sonnet": "GLM-4.6",
-        "opus": "GLM-4.6"
+        "haiku": "glm-5.3-flash",
+        "sonnet": "glm-5.3",
+        "opus": "glm-5.3"
       }
     }
   },
@@ -355,18 +355,18 @@ claude-switcher models list
 # Output:
 # === Available Models (anthropic) ===
 #
-#   haiku: claude-3-5-haiku-20241022
-#   sonnet: claude-sonnet-4-5-20250929
-#   opus: claude-opus-4-20250514
+#   haiku: claude-haiku-4-5
+#   sonnet: claude-sonnet-5
+#   opus: claude-opus-5
 
 # List models for other providers
 claude-switcher models list --provider zai
 # Output:
 # === Available Models (zai) ===
 #
-#   haiku: GLM-4.5-Air
-#   sonnet: GLM-4.6
-#   opus: GLM-4.6
+#   haiku: glm-5.3-flash
+#   sonnet: glm-5.3
+#   opus: glm-5.3
 
 # Preview what would change (dry run)
 claude-switcher profile update-models my-claude --dry-run
@@ -379,11 +379,11 @@ claude-switcher profile update-models my-claude
 #
 # Changes made:
 #   haiku:
-#     Old: claude-3-haiku-20240307
-#     New: claude-3-5-haiku-20241022
+#     Old: claude-3-5-haiku-20241022
+#     New: claude-haiku-4-5
 #   sonnet:
-#     Old: claude-3-5-sonnet-20241022
-#     New: claude-sonnet-4-5-20250929
+#     Old: claude-sonnet-4-5-20250929
+#     New: claude-sonnet-5
 #
 # ✓ Profile 'my-claude' updated with latest anthropic models
 
@@ -397,7 +397,7 @@ claude-switcher models update glm --provider zai
 # Terminal 1: Claude Sonnet 4.5
 claude-switcher start claude
 
-# Terminal 2: GLM-4.6
+# Terminal 2: GLM-5.3
 claude-switcher start glm
 
 # Terminal 3: Custom profile
@@ -611,7 +611,7 @@ claude-switcher profile add deepseek
 
 ```bash
 # Launch with specific model override
-claude-switcher start glm --model GLM-4.5-Air
+claude-switcher start glm --model glm-5.3-flash
 
 # Launch in specific directory
 cd ~/my-project && claude-switcher start claude
